@@ -603,6 +603,54 @@ async function resolvePdfWorkerSrc(): Promise<string | null> {
 
 export type PdfTextPage = { page: number; lines: string[] };
 
+type PdfGlyph = { text: string; x: number | null; y: number | null; w: number };
+
+/**
+ * Line pitch on this page, from gaps that are a text row and not a section break.
+ * A form value often sits a few points off its label. A 2pt break splits that row.
+ */
+function rowBand(glyphs: PdfGlyph[]): number {
+  const ys = glyphs.map((glyph) => glyph.y).filter((y): y is number => y != null).sort((a, b) => b - a);
+  const gaps: number[] = [];
+  for (let i = 1; i < ys.length; i += 1) {
+    const gap = ys[i - 1]! - ys[i]!;
+    if (gap >= 9 && gap <= 28) gaps.push(gap);
+  }
+  if (!gaps.length) return 3;
+  gaps.sort((a, b) => a - b);
+  const pitch = gaps[Math.floor(gaps.length / 2)]!;
+  return Math.min(8, Math.max(3, pitch * 0.5));
+}
+
+function linesFromPdfGlyphs(glyphs: PdfGlyph[]): string[] {
+  const copy = glyphs.map((glyph) => ({ ...glyph, y: glyph.y ?? 0, x: glyph.x ?? 0 }));
+  copy.sort((a, b) => b.y - a.y || a.x - b.x);
+  const band = rowBand(copy);
+  const rows: PdfGlyph[][] = [];
+  for (const glyph of copy) {
+    const row = rows[rows.length - 1];
+    const anchor = row?.[0];
+    if (row && anchor && anchor.y != null && glyph.y != null && Math.abs(anchor.y - glyph.y) <= band) {
+      row.push(glyph);
+    } else {
+      rows.push([glyph]);
+    }
+  }
+  return rows.map((row) => {
+    const sorted = [...row].sort((a, b) => (a.x ?? 0) - (b.x ?? 0));
+    let out = "";
+    let end = -Infinity;
+    for (const glyph of sorted) {
+      const x = glyph.x ?? 0;
+      if (!out) out = glyph.text;
+      else if (x <= end + 1.5) out += glyph.text;
+      else out += ` ${glyph.text}`;
+      end = Math.max(end, x + glyph.w);
+    }
+    return out.replace(/\s+/g, " ").trim();
+  }).filter(Boolean);
+}
+
 async function pdfJsTextPagesFromDoc(
   doc: { numPages: number; getPage: (n: number) => Promise<{ getTextContent: () => Promise<{ items: unknown[] }> }> },
   maxPages: number,
@@ -613,35 +661,15 @@ async function pdfJsTextPagesFromDoc(
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
     const glyphs = content.items.flatMap((item) => {
-      const row = item as { str?: string; transform?: number[] };
+      const row = item as { str?: string; transform?: number[]; width?: number };
       const text = String(row.str ?? "").replace(/\s+/g, " ").trim();
       if (!text) return [];
       const x = Array.isArray(row.transform) ? row.transform[4] : null;
       const y = Array.isArray(row.transform) ? row.transform[5] : null;
-      return [{ text, x, y }];
+      const w = Number(row.width ?? 0);
+      return [{ text, x, y, w: Number.isFinite(w) ? w : 0 }];
     });
-    // Content-stream order is not a row. A name and the amount in its row share a y.
-    glyphs.sort((a, b) => {
-      const ay = a.y ?? 0;
-      const by = b.y ?? 0;
-      if (a.y != null && b.y != null && Math.abs(ay - by) > 2) return by - ay;
-      return (a.x ?? 0) - (b.x ?? 0);
-    });
-    const lines: string[] = [];
-    let current = "";
-    let lastY: number | null = null;
-    for (const glyph of glyphs) {
-      const y = glyph.y;
-      if (lastY != null && y != null && Math.abs(lastY - y) > 2 && current) {
-        lines.push(current.trim());
-        current = glyph.text;
-      } else {
-        current = current ? `${current} ${glyph.text}` : glyph.text;
-      }
-      if (y != null) lastY = y;
-    }
-    if (current.trim()) lines.push(current.trim());
-    pages.push({ page: i, lines });
+    pages.push({ page: i, lines: linesFromPdfGlyphs(glyphs) });
   }
   return pages;
 }

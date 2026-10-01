@@ -188,26 +188,12 @@ const HEADING_AND_WAGE = [
   "Wages, salaries, tips, etc. Attach Form(s) W-2 8,919",
 ];
 
-/** Helvetica pages from the leftover lines. Not a founder PDF stand-in. */
-function printedReturnPdf(linesOrPages: readonly string[] | readonly (readonly string[])[]) {
-  const pages =
-    linesOrPages.length > 0 && Array.isArray(linesOrPages[0])
-      ? (linesOrPages as readonly (readonly string[])[])
-      : [linesOrPages as readonly string[]];
-  const streams = pages.map((lines) => {
-    const commands = ["BT", "/F1 12 Tf", "72 720 Td"];
-    for (const [index, line] of lines.entries()) {
-      if (index) commands.push("0 -18 Td");
-      commands.push(`(${line.replace(/[()\\]/g, "\\$&")}) Tj`);
-    }
-    commands.push("ET");
-    return commands.join("\n");
-  });
-  const fontId = 3 + pages.length * 2;
-  const kids = pages.map((_, index) => `${3 + index * 2} 0 R`).join(" ");
+function pdfFromContentStreams(streams: string[]) {
+  const fontId = 3 + streams.length * 2;
+  const kids = streams.map((_, index) => `${3 + index * 2} 0 R`).join(" ");
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    `<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`,
+    `<< /Type /Pages /Kids [${kids}] /Count ${streams.length} >>`,
   ];
   streams.forEach((stream, index) => {
     const pageId = 3 + index * 2;
@@ -234,6 +220,39 @@ function printedReturnPdf(linesOrPages: readonly string[] | readonly (readonly s
     Buffer.from(`trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefAt}\n%%EOF\n`),
   );
   return new Uint8Array(Buffer.concat(chunks));
+}
+
+/** Helvetica pages from the leftover lines. Not a founder PDF stand-in. */
+function printedReturnPdf(linesOrPages: readonly string[] | readonly (readonly string[])[]) {
+  const pages =
+    linesOrPages.length > 0 && Array.isArray(linesOrPages[0])
+      ? (linesOrPages as readonly (readonly string[])[])
+      : [linesOrPages as readonly string[]];
+  const streams = pages.map((lines) => {
+    const commands = ["BT", "/F1 12 Tf", "72 720 Td"];
+    for (const [index, line] of lines.entries()) {
+      if (index) commands.push("0 -18 Td");
+      commands.push(`(${line.replace(/[()\\]/g, "\\$&")}) Tj`);
+    }
+    commands.push("ET");
+    return commands.join("\n");
+  });
+  return pdfFromContentStreams(streams);
+}
+
+/**
+ * Separate text objects. Not the guest packet, and not a line that already
+ * contains the name and the amount. The amount baseline is 3.2pt under the
+ * name. A 2pt row break leaves that amount on its own line.
+ */
+function positionedGlyphPdf(items: readonly { text: string; x: number; y: number }[]) {
+  const commands = ["BT", "/F1 9 Tf"];
+  for (const item of items) {
+    commands.push(`1 0 0 1 ${item.x} ${item.y} Tm`);
+    commands.push(`(${item.text.replace(/[()\\]/g, "\\$&")}) Tj`);
+  }
+  commands.push("ET");
+  return pdfFromContentStreams([commands.join("\n")]);
 }
 
 /** Same Grok look as live. Names-only + 1g. Not the three-business card. */
@@ -625,6 +644,92 @@ async function main() {
   assert.doesNotMatch(rowAsk, /2,563,436|3,033,949/);
   assert.match(rowAsk, /Use this/);
   assert.ok(!rowWrite.draft.incomeType.value);
+
+  // Not the guest packet. Each cell is its own text object. The income amount
+  // sits 3.2pt under the name, which a 2pt break leaves off the entity row.
+  const splitRow = positionedGlyphPdf([
+    { text: "Form 1040", x: 36, y: 740 },
+    { text: "U.S. Individual Income Tax Return", x: 140, y: 740 },
+    { text: "2024", x: 420, y: 720 },
+    { text: "Schedule C (Form 1040)", x: 36, y: 690 },
+    { text: "Name of proprietor", x: 36, y: 676 },
+    { text: "Vouch Eim Soy", x: 36, y: 662 },
+    { text: "Schedule E (Form 1040)", x: 36, y: 630 },
+    { text: "Supplemental Income and Loss", x: 190, y: 627.4 },
+    { text: "Passive income", x: 180, y: 600 },
+    { text: "2,563,436", x: 420, y: 600 },
+    { text: "L&H VENTURES LLC", x: 72, y: 588 },
+    { text: "P", x: 230, y: 588 },
+    { text: "92-3033949", x: 260, y: 588 },
+    { text: "60,343", x: 430, y: 584.8 },
+    { text: "Schedule K-1 (Form 1120-S)", x: 36, y: 540 },
+    { text: "HO & SOY INC", x: 72, y: 516 },
+    { text: "S corporation", x: 220, y: 516 },
+    { text: "92-3033949", x: 330, y: 516 },
+    { text: "3,033,949", x: 460, y: 504 },
+    { text: "1", x: 36, y: 492 },
+    { text: "Ordinary business income (loss)", x: 52, y: 492 },
+    { text: "26,351", x: 430, y: 488.8 },
+    { text: "Schedule K-1 (Form 1120-S)", x: 36, y: 450 },
+    { text: "HO & SOY INC", x: 72, y: 426 },
+    { text: "92-3033949", x: 330, y: 426 },
+    { text: "1", x: 36, y: 402 },
+    { text: "Ordinary business income (loss)", x: 52, y: 402 },
+    { text: "26,351", x: 430, y: 398.8 },
+  ]);
+  const splitExtract = await classifyAndExtract(splitRow, "application/pdf", namesOnlyLook, null, name);
+  assert.notEqual(splitExtract.failed, true, "a split baseline with the income amounts is not a failed read");
+  assert.ok(!(splitExtract.warnings ?? []).includes("unmapped-text"));
+  const splitBusinesses = readerBusinessLines(splitExtract.readerMap);
+  assert.ok(
+    splitBusinesses.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `split row schedule c ${JSON.stringify(splitBusinesses)}`,
+  );
+  assert.ok(
+    splitBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `split row schedule e ${JSON.stringify(splitBusinesses)}`,
+  );
+  assert.equal(
+    splitBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `split row keeps both K-1 lines ${JSON.stringify(splitBusinesses)}`,
+  );
+  assert.equal(splitBusinesses.some((line) => line.value === "2563436" || line.value === "3033949"), false);
+  const splitAt = "2026-09-30T04:10:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: splitAt,
+        status: "received",
+      },
+    ],
+  });
+  const splitWrite = applyExtractWrite(
+    splitAt,
+    name,
+    {
+      extractClass: splitExtract.extractClass,
+      confidence: splitExtract.confidence,
+      fields: splitExtract.fields,
+      readerMap: splitExtract.readerMap,
+    },
+    undefined,
+    false,
+  );
+  const splitAsk = splitWrite.draft.pendingProposal ? proposalAskCopy(splitWrite.draft.pendingProposal) : "";
+  assert.match(splitAsk, /Schedule C under Vouch Eim Soy/i);
+  assert.match(splitAsk, /L&H VENTURES LLC/);
+  assert.match(splitAsk, /60,343/);
+  assert.match(splitAsk, /26,351/);
+  assert.doesNotMatch(splitAsk, /2,563,436|3,033,949|8,919/);
+  assert.match(splitAsk, /Use this/);
+  assert.ok(!splitWrite.draft.incomeType.value);
 
   const blankPdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
   const blankLook = {

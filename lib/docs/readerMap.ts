@@ -296,11 +296,13 @@ function businessMoneyTokens(line: string): string[] {
 
 function scheduleHeading(line: string): "c" | "e" | "k1" | "other" | null {
   const t = line.trim();
-  if (!t || t.length > 96) return null;
-  if (/^\s*schedule\s+c\b/i.test(t) && !/\b(attach|see|instruction|line)\b/i.test(t)) return "c";
-  if (/^\s*schedule\s+e\b/i.test(t) || /^\s*supplemental income and loss\b/i.test(t)) return "e";
-  if (/^\s*schedule\s+k-?1\b/i.test(t)) return "k1";
-  if (/^\s*(?:schedule\s+[a-z0-9]|form\s+\d{3,4})\b/i.test(t)) return "other";
+  if (!t) return null;
+  const head = t.slice(0, 80);
+  if (/^\s*schedule\s+c\b/i.test(head) && !/\b(attach|see|instruction|line)\b/i.test(head)) return "c";
+  if (/^\s*schedule\s+e\b/i.test(head) || /^\s*supplemental income and loss\b/i.test(head)) return "e";
+  if (/^\s*schedule\s+k-?1\b/i.test(head)) return "k1";
+  if (t.length > 96) return null;
+  if (/^\s*(?:schedule\s+[a-z0-9]|form\s+\d{3,4})\b/i.test(head)) return "other";
   return null;
 }
 
