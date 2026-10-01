@@ -775,7 +775,17 @@ async function main() {
     /readerMapFromPrintedLines\(RETURN_THREE\)/,
     "the three-line fixture is the extract map, not in-memory lines before the drop",
   );
-  assert.match(extractSrc, /return readReturnTextLayer\(bytes, mediaType, filename\)/);
+  const printedFn = extractSrc.slice(
+    extractSrc.indexOf("async function printedLinesForExtract"),
+    extractSrc.indexOf("async function readReturnTextLayer"),
+  );
+  assert.match(printedFn, /printedLooksLikePersonal1040\(raw\)/);
+  assert.match(printedFn, /return readPdfJsTextLayer\(bytes, filename\)/);
+  assert.match(
+    printedFn,
+    /if \(printedLooksLikePersonal1040\(raw\) \|\| printedLooksLikeNeverStubForm\(raw\)\) \{\s*return readPdfJsTextLayer/,
+    "a 1040 scrape is not the printed layer — pdf.js has to read it",
+  );
   assert.match(leftoverSrc, /classifyAndExtract\(\s*blankPdf,[\s\S]{0,80}"blank\.pdf"/);
   assert.doesNotMatch(
     leftoverSrc,

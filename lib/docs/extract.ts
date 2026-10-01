@@ -1020,7 +1020,17 @@ async function printedLinesForExtract(
   mediaType: string,
   filename?: string | null,
 ): Promise<string[] | null> {
-  return readReturnTextLayer(bytes, mediaType, filename);
+  if (!(isPdf(bytes) || mediaType === "application/pdf")) return null;
+  if (!pdfLooksEncrypted(bytes)) {
+    const raw = readPdfTextLayer(bytes);
+    if (raw?.length) {
+      if (printedLooksLikePersonal1040(raw) || printedLooksLikeNeverStubForm(raw)) {
+        return readPdfJsTextLayer(bytes, filename);
+      }
+      return raw;
+    }
+  }
+  return readPdfJsTextLayer(bytes, filename);
 }
 
 /** pdf.js glyphs first. A scrape-only 1040 is not a read of the packet. */
