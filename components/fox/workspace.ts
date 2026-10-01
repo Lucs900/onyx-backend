@@ -4570,6 +4570,9 @@ function deskStripActionsComputed(
     return stripStreetSuggest(finishLineActions(draft));
   }
 
+  if (isUnreadNote(message.text)) {
+    return stripStreetSuggest(unreadAskActions(draft));
+  }
   const greet = workspaceGreeting(draft);
   if (greet.text === message.text) {
     return stripStreetSuggest(greet.actions ?? []);

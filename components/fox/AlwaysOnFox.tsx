@@ -225,7 +225,7 @@ import {
   requestFoxPickFile,
 } from "./DocumentDrop";
 import { continueTaxReturnPacketRead } from "./taxReturnPacket";
-import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
+import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
 import { WorkspaceFileDock } from "./FilePreview";
 import {
   DOC_INTAKE_EVENT,
@@ -390,25 +390,50 @@ function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Received is not the last line. Card when the drop built one. Layer note when it did not. */
-function paintPastReceived(messages: FoxMessage[], detail: DocIntakeDetail): FoxMessage[] {
+/** A fox tail that only repeats an earlier fox line is not a new read. */
+function withoutTrailingFoxReprint(messages: FoxMessage[]): FoxMessage[] {
+  const next = messages.slice();
+  while (next.length > 1) {
+    const last = next[next.length - 1];
+    if (!last || last.role !== "fox") break;
+    const key = last.text.trim();
+    if (!key) break;
+    const earlier = next
+      .slice(0, -1)
+      .some((message) => message.role === "fox" && message.text.trim() === key);
+    if (!earlier) break;
+    next.pop();
+  }
+  return next;
+}
+
+/**
+ * The system bubble is what paints `filename · received`. If that bubble is the
+ * tail — including after a reprinted fox line — speak the card or the layer note.
+ * The stamp stays in the thread. It is not the last line.
+ */
+function paintPastReceived(messages: FoxMessage[]): FoxMessage[] {
   const live = getFoxDraft();
+  const cut = withoutTrailingFoxReprint(messages);
+  const last = cut[cut.length - 1];
+  if (!last || !isReceivedStatusLine(last.text)) {
+    return cut.length === messages.length ? messages : cut;
+  }
   const cardAsk =
     live.pendingProposal && shouldSpeakPendingConfirm(live)
-      ? docReactionAsk(live, detail.extractClass) ?? nextFoxAsk(live)
+      ? docReactionAsk(live) ?? nextFoxAsk(live)
       : null;
-  const text = linePastReceivedStamp({
-    lastRole: messages[messages.length - 1]?.role,
-    lastText: messages[messages.length - 1]?.text,
-    receivedName: detail.received?.name,
-    cardText: cardAsk?.text,
-  });
-  if (!text) return messages;
-  const ask =
-    cardAsk && text === cardAsk.text.trim()
-      ? cardAsk
-      : { text: NO_TEXT_LAYER_NOTE, actions: unreadAskActions(live) };
-  return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
+  const cardText = String(cardAsk?.text ?? "").trim();
+  const spoken = cardText && !isReceivedStatusLine(cardText) ? cardText : NO_TEXT_LAYER_NOTE;
+  if (messages[messages.length - 1]?.text.trim() === spoken) return messages;
+  return [
+    ...cut,
+    {
+      id: `${last.id}:read`,
+      role: "fox",
+      text: spoken,
+    },
+  ];
 }
 
 function foxAskMessage(ask: {
@@ -788,14 +813,16 @@ function FoxThread({
   onEdit?: (prompt: FoxPrompt, line?: string, messageId?: string) => void;
 }) {
   const [editOpenId, setEditOpenId] = useState<string | null>(null);
-  const thread = sealStoredFoxThread(
-    dropStreetSuggestChips(
-      dropAbandonedAddressConfirm(
-        dropResolvedAddressConfirmChips(
-          withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages), draft),
+  const thread = paintPastReceived(
+    sealStoredFoxThread(
+      dropStreetSuggestChips(
+        dropAbandonedAddressConfirm(
+          dropResolvedAddressConfirmChips(
+            withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages), draft),
+            draft,
+          ),
           draft,
         ),
-        draft,
       ),
     ),
   );
@@ -1162,13 +1189,15 @@ export function AlwaysOnFox({
         live,
       );
     }
-    const held = alignThreadEmployerName(
-      sealStoredFoxThread(
-        dropStreetSuggestChips(
-          dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(resolved, live), live),
+    const held = paintPastReceived(
+      alignThreadEmployerName(
+        sealStoredFoxThread(
+          dropStreetSuggestChips(
+            dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(resolved, live), live),
+          ),
         ),
+        live,
       ),
-      live,
     );
     setFoxMessages(held);
     return held;
@@ -1198,8 +1227,10 @@ export function AlwaysOnFox({
     if (isIdExtractPath(live) && !governmentIdReceivedOnDocs(live)) return;
     if (live.documents.some((doc) => doc.status === "reading")) return;
     setMessages(
-      sealStoredFoxThread(
-        dropResolvedAddressConfirmChips(withStaleIdInviteOffLastLine(stored, live), live),
+      paintPastReceived(
+        sealStoredFoxThread(
+          dropResolvedAddressConfirmChips(withStaleIdInviteOffLastLine(stored, live), live),
+        ),
       ),
     );
   }, [isStart, draft.motion, draft.updatedAt]);
@@ -1536,7 +1567,6 @@ export function AlwaysOnFox({
         }
         return next;
           })(),
-          detail,
         ),
       );
     };
@@ -1678,6 +1708,7 @@ export function AlwaysOnFox({
     commitMessages((prev) => {
       if (isStart) {
         const spoken = lastFoxTurn(prev);
+        if (spoken && (isUnreadNote(spoken.text) || isUseThisConfirmText(spoken.text))) return prev;
         const linked = getFoxDraft();
         if (
           hasLinkedAccount(linked) &&

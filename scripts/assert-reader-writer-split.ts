@@ -30,7 +30,8 @@ import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument, startO
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { classifyAndExtract } from "../lib/docs/extract";
 import { NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
-import { docReactionAsk, nextFoxAsk, previewFacts, workspacePrompt } from "../components/fox/workspace";
+import { docReactionAsk, nextFoxAsk, previewFacts, statusCopy, workspacePrompt } from "../components/fox/workspace";
+import { waitingOnCopy } from "../components/fox/motion";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 import { INCOME_BUBBLES } from "../components/fox/types";
 
@@ -563,6 +564,8 @@ async function main() {
   assert.match(acrLine ?? "", /26,351/);
   assert.notEqual(acrGuest.draft.incomeType.value, "both");
   assert.ok(!acrGuest.draft.incomeType.value);
+  assert.equal(statusCopy(acrGuest.draft), "needs_you");
+  assert.equal(waitingOnCopy(acrGuest.draft), "borrower");
   const thinPacket = printedReturnPdf([thinFace, thinFace, thinFace]);
   const thinNamed = await classifyAndExtract(thinPacket, "application/pdf", namesOnlyLook, null, "thin-face.pdf");
   const thinNamedBusinesses = readerBusinessLines(thinNamed.readerMap);
@@ -851,7 +854,8 @@ async function main() {
   );
   assert.match(alwaysOnSrc, /receivedDropCopy/);
   assert.match(alwaysOnSrc, /paintPastReceived\(/);
-  assert.match(alwaysOnSrc, /linePastReceivedStamp/);
+  assert.match(alwaysOnSrc, /withoutTrailingFoxReprint/);
+  assert.match(alwaysOnSrc, /paintPastReceived\(\s*alignThreadEmployerName/);
   assert.match(alwaysOnSrc, /if \(detail\.received\)/);
   assert.match(
     alwaysOnSrc,

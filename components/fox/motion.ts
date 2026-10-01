@@ -162,9 +162,20 @@ export function humanRequested(draft: FoxIntakeDraft) {
   return (draft.events ?? []).some((event) => event.kind === "request-human");
 }
 
+/** A landed drop on a desk that is not a File yet is waiting on the borrower, not Fox. */
+function landedDropWaitingOnBorrower(draft: FoxIntakeDraft) {
+  if (draft.sampleAccepted || draft.phase === "confirmed") return false;
+  if (motionOf(draft)) return false;
+  const docs = draft.documents ?? [];
+  if (!docs.length) return false;
+  if (docs.some((doc) => doc.status === "reading")) return false;
+  return true;
+}
+
 export function waitingOnCopy(draft: FoxIntakeDraft) {
   if (hasStoredReviewSend(draft)) return "ONYX";
   if (stillUsefulSpokenItems(draft).length > 0) return "borrower";
+  if (landedDropWaitingOnBorrower(draft)) return "borrower";
   const waiting = waitingOnOf(draft);
   return waiting === "onyx" ? "ONYX" : waiting;
 }
@@ -210,6 +221,7 @@ export function motionStatusCopy(draft: FoxIntakeDraft) {
   const motion = motionOf(draft);
   if (motion === "escalated") return "in_queue";
   if (motion) return motion;
+  if (landedDropWaitingOnBorrower(draft)) return "needs_you";
   return "preparing";
 }
 
