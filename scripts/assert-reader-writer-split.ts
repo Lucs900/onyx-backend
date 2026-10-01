@@ -131,6 +131,33 @@ const SOUP_LAYER = [
   "wages $8,919",
 ];
 
+/** The walked card: form titles joined with and, then the entity and a collapsed wage. */
+const HEADING_AND_WAGE = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Filing Status",
+  "Standard Deduction",
+  "Digital Assets",
+  "Social Security",
+  "VOUCH EIM SOY",
+  "SICHIV HO",
+  "Yes No",
+  "Internal Revenue Service",
+  "Schedule C (Form 1040)",
+  "Profit or Loss From Business",
+  "Schedule E (Form 1040)",
+  "Supplemental Income and Loss",
+  "L&H VENTURES LLC",
+  "passive",
+  "2,563,436",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "S corporation",
+  "EIN 92-3033949",
+  "Wages, salaries, tips, etc. Attach Form(s) W-2 8,919",
+];
+
 /** Helvetica pages from the leftover lines. Not a founder PDF stand-in. */
 function printedReturnPdf(linesOrPages: readonly string[] | readonly (readonly string[])[]) {
   const pages =
@@ -787,6 +814,72 @@ async function main() {
     soupWrite.draft.pendingProposal ? proposalAskCopy(soupWrite.draft.pendingProposal) : soupLine ?? "",
     /2,563,436|3,033,949|8,919|Internal Revenue|Yes No/,
   );
+  const headingMap = readerMapFromPrintedLines(HEADING_AND_WAGE);
+  assert.ok(!headingMap.names.some((item) => /filing status|standard deduction|digital assets|social security|internal revenue|yes no/i.test(item)));
+  assert.equal(readerWageLine(headingMap), null, "a collapsed wages label is not a wage to offer");
+  assert.equal(readerBusinessLines(headingMap).length, 0);
+  assert.equal(readerMapOpensReturnCard(headingMap), false, "entity plus wages must not open Use this");
+  const headingAsked = applyExtractedFields(emptyDraft(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      full_name: "Filing Status and Standard Deduction",
+      entity_name: "L&H VENTURES LLC",
+      wages: "8919",
+      wage_line_label: "wages",
+    },
+    readerMap: headingMap,
+  });
+  assert.ok(!headingAsked.draft.pendingProposal, "a heading soup must not keep Use this");
+  const headingPacket = printedReturnPdf(HEADING_AND_WAGE);
+  const headingExtract = await classifyAndExtract(
+    headingPacket,
+    "application/pdf",
+    namesOnlyLook,
+    null,
+    name,
+  );
+  assert.equal(headingExtract.failed, true, "form titles and a wage are not the return card");
+  assert.ok((headingExtract.warnings ?? []).includes("no-text-layer"));
+  assert.equal(readerMapOpensReturnCard(headingExtract.readerMap), false);
+  const headingAt = "2026-09-30T04:08:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: headingPacket.byteLength,
+        receivedAt: headingAt,
+        status: "received",
+      },
+    ],
+  });
+  const headingWrite = applyExtractWrite(
+    headingAt,
+    name,
+    {
+      extractClass: headingExtract.extractClass,
+      confidence: headingExtract.confidence,
+      fields: headingExtract.fields,
+      readerMap: headingExtract.readerMap,
+    },
+    NO_TEXT_LAYER_NOTE,
+    true,
+  );
+  assert.ok(!headingWrite.draft.pendingProposal);
+  assert.ok(headingWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
+  const headingLine = linePastReceivedStamp({
+    lastRole: "system",
+    lastText: receivedDropCopy(name),
+    receivedName: name,
+    cardText: "",
+  });
+  assert.equal(headingLine, NO_TEXT_LAYER_NOTE);
+  assert.doesNotMatch(headingLine ?? "", /8,919|L&H VENTURES|Use this|Filing Status/);
   assert.doesNotMatch(
     unreadWrite.draft.pendingProposal ? proposalAskCopy(unreadWrite.draft.pendingProposal) : "",
     /Schedule C under Vouch Eim Soy|60,343|26,351/,

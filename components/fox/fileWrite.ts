@@ -88,6 +88,7 @@ import {
   readerEntityName,
   readerMapNeverOpensStub,
   readerMapOpensReturnCard,
+  readerMapSchedulePacketUnread,
   readerWageLine,
   type ReaderMap,
 } from "@/lib/docs/readerMap";
@@ -940,6 +941,7 @@ export function maybeProposeFederalReturn(
   readerMap?: ReaderMap | null,
 ): FoxIntakeDraft | null {
   const mapOpens = readerMapOpensReturnCard(readerMap);
+  if (readerMapSchedulePacketUnread(readerMap)) return null;
   if (isTranscriptReturnFields(fields)) return null;
   if (isCoverReturnFields(fields) && !mapOpens) return null;
   const pageRead = looksLikeTaxReturnPageReadFields(fields);

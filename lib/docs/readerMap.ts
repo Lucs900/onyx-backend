@@ -132,10 +132,23 @@ function formFromBlob(blob: string): ReaderForm[] {
   return unique(forms) as ReaderForm[];
 }
 
+const FORM_LABEL_WORD =
+  /^(?:filing|status|digital|assets|asset|standard|deduction|deductions|qualified|taxable|tax|credits|credit|payments|payment|refund|amount|owe|owed|designee|preparer|social|security|adjusted|gross|earned|child|additional|opportunity|recovery|rebate|virtual|currency|foreign|accounts|account|presidential|election|identity|protection|occupation|dependents|dependent|spouse|married|single|jointly|separately|household|qualifying|widow|wages|salaries|salary|tips|employee|employees|total|income|interest|dividends|dividend|pension|annuity|capital|gain|loss|losses|business|profit|supplemental|ordinary|passive|nonpassive|proprietor|partner|partnership|shareholder|corporation|department|treasury|internal|revenue|service|yes|no|attach|instructions|instruction|caution|address|identification|employer|rents|royalties|royalty|depreciation|expenses|expense|mortgage|receipts|sales|inventory|other)$/i;
+
+function isFormLabelName(line: string) {
+  const words = line
+    .replace(/[^A-Za-z'\s-]/g, " ")
+    .split(/\s+/)
+    .map((word) => word.replace(/'/g, ""))
+    .filter(Boolean);
+  return words.some((word) => FORM_LABEL_WORD.test(word));
+}
+
 function isFormChromeName(line: string) {
   const t = line.replace(/\s+/g, " ").trim();
   if (!t) return false;
   if (/internal revenue service|department of the treasury|united states treasury/i.test(t)) return true;
+  if (isFormLabelName(t)) return true;
   return /^(?:yes|no)(?:\s+(?:yes|no))*$/i.test(t);
 }
 
@@ -200,8 +213,8 @@ export function isUnofferedWageText(text?: string | null) {
 export function wageLineIsOffered(line: ReaderLine) {
   if (line.kind !== "wages" && line.kind !== "household_wages") return false;
   if (isUnofferedWageText(`${line.label ?? ""} ${line.kind}`)) return false;
-  const raw = String(line.label ?? "").replace(/\s+/g, " ").trim();
-  return Boolean(raw) && !/^wages$/i.test(raw);
+  const spoken = cleanWageLabel(line.label);
+  return Boolean(spoken) && !/^wages$/i.test(spoken);
 }
 
 function cleanWageLabel(label?: string) {
@@ -244,10 +257,20 @@ export function readerBusinessSpeech(line: ReaderLine) {
   return "";
 }
 
-/** Never-stub page with a printed business line or an on-page wage. A name or entity alone is not a card. */
+/** Schedule headings without an income line. A wage or an entity name is not that read. */
+export function readerMapSchedulePacketUnread(map?: ReaderMap | null): boolean {
+  if (!map) return false;
+  const schedules =
+    map.forms.includes("schedule_c") || map.forms.includes("schedule_e") || map.forms.includes("k1");
+  return schedules && readerBusinessLines(map).length === 0;
+}
+
+/** Never-stub page with a printed business line, or a wage on a page that is not an unread schedule packet. */
 export function readerMapOpensReturnCard(map?: ReaderMap | null): boolean {
   if (!map || !readerMapNeverOpensStub(map)) return false;
-  return Boolean(readerWageLine(map) || readerBusinessLines(map).length);
+  if (readerBusinessLines(map).length) return true;
+  if (readerMapSchedulePacketUnread(map)) return false;
+  return Boolean(readerWageLine(map));
 }
 
 function moneyOnLine(line: string) {
@@ -457,7 +480,7 @@ export function readerMapFromPrintedLines(lines: readonly string[]): ReaderMap {
     const around = cleaned.slice(Math.max(0, index - 3), index + 4).join(" ");
     if (isUnofferedWageText(around)) continue;
     const label = wageLineLabel(line);
-    if (/^wages$/i.test(label)) continue;
+    if (/^wages$/i.test(cleanWageLabel(label))) continue;
     const amount = moneyOnLine(line);
     if (amount) linesOut.push({ kind: "wages", value: amount, label });
   }

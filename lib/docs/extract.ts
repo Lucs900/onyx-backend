@@ -72,6 +72,7 @@ import {
   readerMapFromPrintedLines,
   readerMapNeverOpensStub,
   readerMapOpensReturnCard,
+  readerMapSchedulePacketUnread,
   type ReaderMap,
 } from "@/lib/docs/readerMap";
 
@@ -2218,9 +2219,14 @@ export async function classifyAndExtract(
     ),
   );
   const layerChars = pdfLayerChars(layer);
+  const printedMap = layer?.length ? readerMapFromPrintedLines(layer) : null;
   const layerOpens =
-    readerMapOpensReturnCard(blocked.readerMap) ||
-    readerMapOpensReturnCard(readerMapFromPrintedLines(layer ?? []));
+    readerMapOpensReturnCard(blocked.readerMap) || readerMapOpensReturnCard(printedMap);
+  // A 1040 face that names Schedule C / E / K-1 and never reads those lines is
+  // still unread when a look locks some other dollar.
+  const faceMissingScheduleLines = Boolean(
+    printedMap && layer && looksLike1040FacePage(layer) && readerMapSchedulePacketUnread(printedMap),
+  );
   // Named 1040 / 1120 / 1065 walks stay on their old page-read. A personal.pdf
   // whose pdf.js layer never opens the card is not a names-only read.
   const returnWithoutCard =
@@ -2230,7 +2236,7 @@ export async function classifyAndExtract(
     !layerOpens &&
     !fieldsAreTranscript(blocked.fields) &&
     !transcriptLayer(layer) &&
-    !fieldsLockAReturnLine(blocked.fields);
+    (!fieldsLockAReturnLine(blocked.fields) || faceMissingScheduleLines);
   if (returnWithoutCard) {
     blocked = unreadResult(
       preferFilenameClass("tax_return", filename ?? ""),
