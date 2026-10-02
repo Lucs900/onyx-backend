@@ -1180,6 +1180,30 @@ async function main() {
   );
   assert.ok((readingAsk.actions ?? []).length > 0, "the reading line is not bare");
   assert.equal(readingDraft.incomeType.value ?? "", "");
+  const packetAfterCard = applyExtractedFields(letterUsed, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      packet_read: "schedules",
+      tax_year: "2024",
+      form_1040: "1",
+      schedule_e_rents_received: "106404",
+      schedule_e_cash_expenses: "31452",
+      gross_receipts: "77131",
+      business_name: "VOUCH EIM SOY",
+      return_kind: "1120s",
+    },
+  });
+  assert.deepEqual(returnCardLinesOnFile(packetAfterCard.draft), writtenLines);
+  assert.equal(packetAfterCard.draft.incomeType.value ?? "", "");
+  assert.equal(packetAfterCard.draft.facts?.gross_receipts, undefined);
+  assert.equal(packetAfterCard.draft.facts?.qualifying_income, undefined);
+  assert.equal(packetAfterCard.draft.pendingProposal, null, "the spoken card does not open a monthly suggestion");
+  assert.ok(
+    !previewFacts(packetAfterCard.draft).some((fact) => /gross receipts/i.test(`${fact.label} ${fact.value}`)),
+    "the pad has no gross-receipts line",
+  );
+  assert.doesNotMatch(nextFoxAsk(packetAfterCard.draft).text, /a month|suggesting \$/i);
   const headingAsked = applyExtractedFields(emptyDraft(), {
     extractClass: "tax_return",
     confidence: 0.94,

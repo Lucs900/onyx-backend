@@ -1957,6 +1957,54 @@ export type ExtractApplyResult = {
   quietLines: string[];
 };
 
+/**
+ * The spoken return rows are already the file. The packet pass that follows Use this
+ * must not add gross receipts or turn those rows into a monthly suggestion.
+ */
+function fieldsAfterSpokenReturnCard(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string>,
+  packetContinue: string,
+): Record<string, string> {
+  if (!packetContinue || returnCardLinesOnFile(draft).length === 0) return fields;
+  const drop = new Set([
+    "gross_receipts",
+    "business_name",
+    "schedule_c_net_profit",
+    "depreciation",
+    "amortization",
+    "depletion",
+    "business_use_of_home",
+    "schedule_e_rents_received",
+    "schedule_e_cash_expenses",
+    "schedule_e_property_address",
+    "schedule_e_part2_names",
+    "schedule_e_monthly",
+    "k1_ordinary_income",
+    "k1_distributions",
+    "other_k1_ordinary_income",
+    "entity_ordinary_income",
+    "entity_taxable_income",
+    "entity_name",
+    "entity_depreciation",
+    "entity_amortization",
+    "ownership_percent",
+    "other_k1_ownership_percent",
+    "officer_compensation",
+    "company_ordinary",
+    "owner_share_monthly",
+    "qualifying_income",
+    "qualifying_method",
+    "return_kind",
+    "wages",
+  ]);
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (!drop.has(key)) next[key] = value;
+  }
+  return next;
+}
+
 export function applyExtractedFields(
   draft: FoxIntakeDraft,
   input: ExtractApplyInput,
@@ -2010,6 +2058,7 @@ export function applyExtractedFields(
       fields = nextFields;
     }
   }
+  fields = fieldsAfterSpokenReturnCard(draft, fields, packetContinue);
   draft = withFileIncomeHygiene(draft, extractClass, fields);
   if (extractClass === "tax_return") {
     draft = parkWrittenRentalCash(draft);
