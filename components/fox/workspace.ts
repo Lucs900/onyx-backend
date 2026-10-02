@@ -2918,9 +2918,35 @@ export function sameBusinessIntakeAsk(
   return docReactionAsk(draft, extractClass) ?? workspacePromptCopy("confirm-proposal", draft);
 }
 
+/** Create account · Log in · Not now. Start over only — not a reading beat. */
+function isStartOverAccountOffer(actions: FoxAction[]): boolean {
+  return actions.some(
+    (action) => action.id === "create-account" || action.capture?.field === "create-account",
+  );
+}
+
+function withoutStartOverAccountOffer(actions: FoxAction[]): FoxAction[] {
+  if (!isStartOverAccountOffer(actions)) return actions;
+  return actions.filter(
+    (action) =>
+      action.label !== "Create account" &&
+      action.label !== "Log in" &&
+      action.id !== "skip-account" &&
+      action.capture?.field !== "skip-account",
+  );
+}
+
+/** A return in flight must not fall through to the Start over account offer. */
+function returnReadInFlight(draft: FoxIntakeDraft): boolean {
+  return (
+    taxReturnPacketHoldAsk(draft) || draft.documents.some((doc) => doc.status === "reading")
+  );
+}
+
 /**
- * "Reading the rest of the return." is status. The chips are the ones the
- * next ask already owns once that hold is not covering them.
+ * "Reading the rest of the return." is status when no return card is on the
+ * File. It does not inherit Create account · Log in · Not now. A card already
+ * spoken stays that card — this beat does not replace it.
  */
 function packetReadingAsk(draft: FoxIntakeDraft): {
   text: string;
@@ -2933,9 +2959,8 @@ function packetReadingAsk(draft: FoxIntakeDraft): {
     return { text: PACKET_READING_LINE };
   }
   const under = nextFoxAsk(released);
-  return under.actions?.length
-    ? { text: PACKET_READING_LINE, actions: under.actions }
-    : { text: PACKET_READING_LINE };
+  const actions = withoutStartOverAccountOffer(under.actions ?? []);
+  return actions.length ? { text: PACKET_READING_LINE, actions } : { text: PACKET_READING_LINE };
 }
 
 export function docReactionAsk(
@@ -4430,8 +4455,9 @@ export function deskStripActions(
     if (returnCardLinesOnFile(draft).length === 0) return true;
     return action.label !== "Create account" && action.label !== "Log in" && action.label !== "Not now";
   });
-  if (!hasLinkedAccount(draft)) return computed;
-  const live = computed.filter((item) => !isLiveCreateAccountAction(item));
+  const offered = returnReadInFlight(draft) ? withoutStartOverAccountOffer(computed) : computed;
+  if (!hasLinkedAccount(draft)) return offered;
+  const live = offered.filter((item) => !isLiveCreateAccountAction(item));
   if (live.length) return live;
   return stripStreetSuggest(linkedLastLineActions(draft));
 }

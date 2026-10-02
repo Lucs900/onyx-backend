@@ -35,7 +35,15 @@ import { incomeLedgerFieldsFromPrintedLines } from "../lib/income/ledger";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { classifyAndExtract } from "../lib/docs/extract";
 import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
-import { deskStripActions, docReactionAsk, nextFoxAsk, previewFacts, statusCopy, workspacePrompt } from "../components/fox/workspace";
+import {
+  deskStripActions,
+  docReactionAsk,
+  nextFoxAsk,
+  previewFacts,
+  statusCopy,
+  workspaceGreeting,
+  workspacePrompt,
+} from "../components/fox/workspace";
 import { freezeUsedFoxTurns, isReturnCardSpeech } from "../components/fox/liveCoupon";
 import { waitingOnCopy } from "../components/fox/motion";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
@@ -1229,6 +1237,67 @@ async function main() {
   assert.notEqual(readingAsk.text, PACKET_READING_LINE, "the reading beat stays off this card");
   assert.equal(readingAsk.text, "");
   assert.deepEqual(readingAsk.actions ?? [], []);
+  const startOver = { ...emptyDraft(), path: "acr" as const, workspaceFlow: true };
+  const startOverLine = workspaceGreeting(startOver).text;
+  assert.deepEqual(
+    deskStripActions([{ id: "greet", role: "fox", text: startOverLine }], startOver).map((item) => item.label),
+    ["Create account", "Log in", "Not now"],
+    "Start over still offers Create account, Log in, and Not now",
+  );
+  const readingDrop = {
+    ...startOver,
+    documents: [
+      {
+        slot: "other" as const,
+        name: "return.pdf",
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: "2026-10-01T16:00:00.000Z",
+        status: "reading" as const,
+      },
+    ],
+  };
+  assert.equal(workspaceGreeting(readingDrop).text, startOverLine, "reading does not add a spoken line");
+  assert.deepEqual(
+    deskStripActions([{ id: "greet", role: "fox", text: startOverLine }], readingDrop).map((item) => item.label),
+    [],
+    "Create account, Log in, and Not now stay off while the return is reading",
+  );
+  const cardWhileReading = {
+    ...letterWrite.draft,
+    documents: letterWrite.draft.documents.map((doc) => ({ ...doc, status: "reading" as const })),
+  };
+  assert.deepEqual(
+    deskStripActions([{ id: "card", role: "fox", text: letterCard }], cardWhileReading).map((item) => item.label),
+    ["Use this", "Change"],
+    "the card keeps Use this and Change while a read is in flight",
+  );
+  assert.notEqual(nextFoxAsk(cardWhileReading).text, PACKET_READING_LINE);
+  const readingFace = {
+    ...startOver,
+    taxReturnPacketRead: "reading" as const,
+    documents: [
+      {
+        slot: "other" as const,
+        name: "return.pdf",
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: "2026-10-01T16:00:00.000Z",
+        status: "extracted" as const,
+        extractClass: "tax_return" as const,
+        bytesRef: "packet-bytes",
+      },
+    ],
+  };
+  const readingBeat = nextFoxAsk(readingFace);
+  assert.equal(returnCardLinesOnFile(readingFace).length, 0);
+  assert.equal(readingBeat.text, PACKET_READING_LINE, "a year-and-name read still speaks the reading line");
+  assert.ok(
+    !(readingBeat.actions ?? []).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+    "the reading beat does not inherit the Start over account offer",
+  );
   const afterUseThread = [
     { id: "card", role: "fox", text: letterCard },
     { id: "use", role: "client", text: "Use this" },
