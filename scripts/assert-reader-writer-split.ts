@@ -197,6 +197,14 @@ const LETTER_ROWS = [
   "DONUT SHOP 722511",
   "VOUCH EIM SOY",
   "SCHEDULE E Supplemental Income and Loss OMB No. 1545-0074",
+  "Part I Income or Loss From Rental Real Estate and Royalties",
+  "A 242 N ABEL ST, MILPITAS, CA 95035",
+  "A 4 personal use days. Check the QJV box A 365",
+  "2 Multi-Family Residence 4 Commercial 6 Royalties 8 Other (describe)",
+  "3 Rents received. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3 106,404.",
+  "4 Royalties received . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4",
+  "21 Subtract line 20 from line 3 (rents) and/",
+  "Form 6198. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 74,952.",
   "Schedule E (Form 1040) 2024 Attachment Sequence No. 13 Page 2",
   "A L&H VENTURES LLC P 88-2563436",
   "B HO & SOY INC S 92-3033949 X",
@@ -214,6 +222,8 @@ const LETTER_ROWS = [
   "L&H VENTURES LLC 60,343. 60,343.",
   "HO & SOY INC 26,351. 26,351.",
   "HO & SOY INC 26,351. 26,351.",
+  "Schedule E, Line 19 - 242 N ABEL ST",
+  "Rent paid to Landlord. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . $ 27,324.",
 ];
 
 function pdfFromContentStreams(streams: string[]) {
@@ -1074,10 +1084,12 @@ async function main() {
   const letterSpoken = readerBusinessLines(letterMap).map((line) => readerBusinessSpeech(line));
   assert.deepEqual(letterSpoken, [
     "Schedule C under VOUCH EIM SOY",
+    "Schedule E · 242 N ABEL ST, MILPITAS, CA 95035 · Commercial · Rents received $106,404 · Net $74,952 · Rent paid to Landlord $27,324",
     "Schedule E · L&H VENTURES LLC · partnership · passive · $60,343",
     "HO & SOY INC · S corp · $26,351",
     "HO & SOY INC · S corp · $26,351",
   ]);
+  assert.doesNotMatch(letterSpoken.join(" "), /own/i);
   assert.equal(readerWageLine(letterMap), null);
   assert.equal(readerMapOpensReturnCard(letterMap), true);
   assert.ok(letterSpoken.every((line) => !/2,563,436|3,033,949|8,919|113,045|92-3033949/.test(line)));

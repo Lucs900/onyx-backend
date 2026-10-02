@@ -300,7 +300,12 @@ function scheduleHeading(line: string): "c" | "e" | "k1" | "other" | null {
   if (!t) return null;
   const head = t.slice(0, 80);
   if (/^\s*schedule\s+c\b/i.test(head) && !/\b(attach|see|instruction|line)\b/i.test(head)) return "c";
-  if (/^\s*schedule\s+e\b/i.test(head) || /^\s*supplemental income and loss\b/i.test(head)) return "e";
+  if (
+    (/^\s*schedule\s+e\b/i.test(head) || /^\s*supplemental income and loss\b/i.test(head)) &&
+    !/\bline\b/i.test(head)
+  ) {
+    return "e";
+  }
   if (/^\s*schedule\s+k-?1\b/i.test(head)) {
     // A line-42 cross reference is not the K-1 form. Leave the schedule that was open.
     if (/\bsee\s+instructions\b/i.test(head) || /\bbox\s+\d+/i.test(head)) return "other";
@@ -361,6 +366,55 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   let passiveIncomeColumn = false;
   const partRows = new Map<string, { entity: string; ein: string; code: "P" | "S" | "" }>();
   const partEmitted = new Set<string>();
+  const typeWords = new Map<string, string>();
+  const rentals = new Map<string, {
+    address: string;
+    typeCode: string;
+    typeWord: string;
+    rents: string;
+    net: string;
+    landlord: string;
+    line: ReaderLine | null;
+  }>();
+  let wantRentalNet = false;
+  let stmtAddress = "";
+
+  const moneySpoken = (amount: string) =>
+    amount ? `$${Number(amount).toLocaleString("en-US")}` : "";
+
+  const rentalLabel = (row: { address: string; typeWord: string; rents: string; net: string; landlord: string }) =>
+    [
+      row.address,
+      row.typeWord,
+      row.rents ? `Rents received ${moneySpoken(row.rents)}` : "",
+      row.net ? `Net ${moneySpoken(row.net)}` : "",
+      row.landlord ? `Rent paid to Landlord ${moneySpoken(row.landlord)}` : "",
+    ].filter(Boolean).join(" · ");
+
+  const samePlace = (left: string, right: string) => {
+    const norm = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const a = norm(left);
+    const b = norm(right);
+    return Boolean(a && b && (a.includes(b) || b.includes(a)));
+  };
+
+  const touchRental = (row: {
+    address: string;
+    typeWord: string;
+    rents: string;
+    net: string;
+    landlord: string;
+    line: ReaderLine | null;
+  }) => {
+    if (!row.address || !row.rents) return;
+    const label = rentalLabel(row);
+    if (!row.line) {
+      row.line = { kind: "schedule_e", value: "", label };
+      out.push(row.line);
+    } else {
+      row.line.label = label;
+    }
+  };
   let pendingK1 = "";
   let k1Role = "";
   let k1Ein = "";
@@ -385,6 +439,8 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
     if (block === "k1") flushBare();
     block = next;
     budget = next === "c" ? 12 : 0;
+    wantRentalNet = false;
+    typeWords.clear();
     if (next === "e") {
       pendingE = "";
       emittedE = false;
@@ -406,6 +462,24 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   };
 
   for (const line of cleaned) {
+    const stmt = line.match(/^\s*schedule\s+e,\s*line\s+\d+\s*-\s*(.+)$/i);
+    if (stmt) {
+      stmtAddress = stmt[1]!.replace(/\s+/g, " ").trim();
+      continue;
+    }
+    if (stmtAddress && /rent paid to landlord/i.test(line)) {
+      const paid = businessMoneyTokens(line).find((amount) => amount.length >= 4) ?? "";
+      if (paid) {
+        for (const row of Array.from(rentals.values())) {
+          if (!samePlace(row.address, stmtAddress)) continue;
+          row.landlord = paid;
+          touchRental(row);
+        }
+      }
+      stmtAddress = "";
+      continue;
+    }
+
     const heading = scheduleHeading(line);
     if (heading === "c" || heading === "e" || heading === "k1") {
       start(heading);
@@ -431,6 +505,60 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
 
     if (block === "e") {
       if (/\(h\)\s*passive income/i.test(line)) passiveIncomeColumn = true;
+      // "4 Royalties received" is the income row. Type 4 is the checklist word "Commercial".
+      const legend = /(?:^|\s)([1-8])\s+(Single Family Residence|Multi-Family Residence|Vacation\/Short-Term Rental|Commercial|Land|Royalties|Self-Rental)\b(?!\s+received)/gi;
+      let legendMatch: RegExpExecArray | null;
+      while ((legendMatch = legend.exec(line))) {
+        typeWords.set(legendMatch[1]!, legendMatch[2]!);
+      }
+      for (const row of Array.from(rentals.values())) {
+        if (!row.typeCode || row.typeWord) continue;
+        const word = typeWords.get(row.typeCode);
+        if (word) row.typeWord = word;
+      }
+      const address = line.match(/^([A-C])\s+(\d{1,6}\s+[^,]{2,80},\s*[A-Za-z .'-]+,\s*[A-Z]{2}\s+\d{5})\b/);
+      if (address) {
+        const letter = address[1]!.toUpperCase();
+        const row = rentals.get(letter) ?? {
+          address: "",
+          typeCode: "",
+          typeWord: "",
+          rents: "",
+          net: "",
+          landlord: "",
+          line: null,
+        };
+        row.address = address[2]!.replace(/\s+/g, " ").trim();
+        rentals.set(letter, row);
+        continue;
+      }
+      const typed = line.match(/^([A-C])\s+([1-8])\b/);
+      if (typed && /personal use|fair rental/i.test(line)) {
+        const row = rentals.get(typed[1]!.toUpperCase());
+        if (row) {
+          row.typeCode = typed[2]!;
+          if (!row.typeWord) row.typeWord = typeWords.get(row.typeCode) ?? "";
+          continue;
+        }
+      }
+      if (/\brents received\b/i.test(line) && rentals.size === 1) {
+        const amount = businessMoneyTokens(line).find((item) => item.length >= 4) ?? "";
+        const row = Array.from(rentals.values())[0];
+        if (amount && row) {
+          row.rents = amount;
+          touchRental(row);
+        }
+      }
+      if (/subtract line 20 from line 3/i.test(line) && /\brents\b/i.test(line)) wantRentalNet = true;
+      const netLine = wantRentalNet ? line.match(/\b21\s+(\d{1,3}(?:,\d{3})+)/) : null;
+      if (netLine && rentals.size === 1) {
+        const row = Array.from(rentals.values())[0];
+        if (row) {
+          row.net = netLine[1]!.replace(/,/g, "");
+          wantRentalNet = false;
+          touchRental(row);
+        }
+      }
       const part = line.match(/^([A-D])\s+(\S.*)$/i);
       if (part) {
         const letter = part[1]!.toUpperCase();
