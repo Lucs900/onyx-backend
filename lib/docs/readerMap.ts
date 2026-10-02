@@ -155,9 +155,17 @@ function isFormChromeName(line: string) {
   return /^(?:yes|no)(?:\s+(?:yes|no))*$/i.test(t);
 }
 
+/** One token copied across the row. That mark is not a person. */
+export function repeatedMarkName(line: string) {
+  const words = line.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (words.length < 2) return false;
+  const token = words[0]!.toLowerCase();
+  return words.every((word) => word.toLowerCase() === token);
+}
+
 function looksLikePersonName(line: string) {
   const t = line.replace(/\s+/g, " ").trim();
-  if (!t || t.length > 48 || isFormChromeName(t)) return false;
+  if (!t || t.length > 48 || isFormChromeName(t) || repeatedMarkName(t)) return false;
   if (/\$|\d{3,}|form|schedule|return|california wages|shareholder|corporation|inc\.?$|llc|basis|authorization/i.test(t)) {
     return false;
   }

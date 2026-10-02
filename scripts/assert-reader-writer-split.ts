@@ -25,6 +25,7 @@ import {
   federalReturnConfirmCopy,
   PACKET_READING_LINE,
   PACKET_WAGES_UNREAD_LINE,
+  k1PersonName,
   returnCardLinesOnFile,
   taxReturnPacketDoc,
   hasLockedSuggestion,
@@ -1321,6 +1322,48 @@ async function main() {
   assert.equal(headingOnly.draft.facts?.officer_compensation, undefined);
   assert.equal(headingOnly.draft.facts?.k1_partner_name, undefined);
   assert.equal(headingOnly.draft.incomeType.value ?? "", "");
+  assert.equal(k1PersonName("PTP PTP PTP", "HO & SOY INC"), "", "a repeated mark is not a person");
+  assert.equal(k1PersonName("Sichiv Ho", "HO & SOY INC"), "Sichiv Ho");
+  const repeatedMarkLayer = [
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "HO & SOY INC",
+    "Shareholder's name, address, city, state, and ZIP code",
+    "PTP PTP PTP",
+    "1 Ordinary business income (loss) 26,351",
+  ];
+  const repeatedMarkMap = readerMapFromPrintedLines(repeatedMarkLayer);
+  assert.equal(repeatedMarkMap.lines.some((line) => line.kind === "k1_box1"), false);
+  assert.ok(!repeatedMarkMap.names.some((item) => /ptp/i.test(item)));
+  const repeatedMarkWrite = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      k1_partner_name: "PTP PTP PTP",
+      k1_ordinary_income: "26351",
+    },
+    readerMap: repeatedMarkMap,
+  });
+  assert.equal(repeatedMarkWrite.draft.pendingProposal, null, "a repeated mark does not open Use this");
+  assert.deepEqual(
+    previewFacts(repeatedMarkWrite.draft).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    previewFacts(paperBase).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    "1120-S stays Still needed when the only name is a repeated mark",
+  );
+  assert.equal(repeatedMarkWrite.draft.facts?.k1_partner_name, undefined);
+  assert.equal(repeatedMarkWrite.draft.incomeType.value ?? "", "");
+  const markThenPerson = readerMapFromPrintedLines([
+    ...repeatedMarkLayer,
+    "Sichiv Ho",
+  ]);
+  assert.deepEqual(
+    markThenPerson.lines.filter((line) => line.kind === "k1_box1").map((line) => line.value),
+    ["Sichiv Ho"],
+    "a later named person is the Box 1 line",
+  );
   const entityLayer = [
     ...headingLayer,
     "Schedule K-1 (Form 1120-S)",

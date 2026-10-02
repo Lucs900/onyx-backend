@@ -90,6 +90,7 @@ import {
   readerMapOpensReturnCard,
   readerMapSchedulePacketUnread,
   readerWageLine,
+  repeatedMarkName,
   type ReaderMap,
 } from "@/lib/docs/readerMap";
 import {
@@ -1255,6 +1256,7 @@ export function k1PersonName(raw: string, entity = ""): string {
   const words = name.split(" ").filter(Boolean);
   if (words.length < 2 || words.length > 4) return "";
   if (!words.every((word) => /^[A-Za-z][A-Za-z.'-]*$/.test(word))) return "";
+  if (repeatedMarkName(name)) return "";
   if (/inc|llc|corp|form|schedule|shareholder|ordinary|wage|heading|address|street/i.test(name)) {
     return "";
   }
