@@ -415,7 +415,7 @@ function withoutTrailingFoxReprint(messages: FoxMessage[]): FoxMessage[] {
 /**
  * The system bubble is what paints `filename · received`. If that bubble is the
  * tail — including after a reprinted fox line — speak the card or the layer note.
- * The stamp stays in the thread. It is not the last line.
+ * A return card already spoken keeps the new stamp and does not invent a missing layer.
  */
 function paintPastReceived(messages: FoxMessage[]): FoxMessage[] {
   const live = getFoxDraft();
@@ -429,7 +429,21 @@ function paintPastReceived(messages: FoxMessage[]): FoxMessage[] {
       ? docReactionAsk(live) ?? nextFoxAsk(live)
       : null;
   const cardText = String(cardAsk?.text ?? "").trim();
-  const spoken = cardText && !isReceivedStatusLine(cardText) ? cardText : NO_TEXT_LAYER_NOTE;
+  if (cardText && !isReceivedStatusLine(cardText)) {
+    if (messages[messages.length - 1]?.text.trim() === cardText) return messages;
+    return [
+      ...cut,
+      {
+        id: `${last.id}:read`,
+        role: "fox",
+        text: cardText,
+      },
+    ];
+  }
+  if (returnCardLinesOnFile(live).length > 0) {
+    return cut.length === messages.length ? messages : cut;
+  }
+  const spoken = NO_TEXT_LAYER_NOTE;
   if (messages[messages.length - 1]?.text.trim() === spoken) return messages;
   return [
     ...cut,

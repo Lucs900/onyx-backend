@@ -20,6 +20,7 @@ import {
   extractHintFromDraft,
   missingExtractClasses,
   rejectIncomingFile,
+  returnCardLinesOnFile,
   stillUsefulRefreshKey,
 } from "./fileWrite";
 import { fileExists } from "./motion";
@@ -130,6 +131,9 @@ export async function ingestDroppedFiles(files: File[]) {
       (doc) => doc.receivedAt === receivedAt && doc.name === name,
       { status: "reading" },
     );
+    if (returnCardLinesOnFile(getFoxDraft()).length > 0) {
+      emitDocIntake({ received: emptyRead });
+    }
 
     try {
       const hint = extractHintFromDraft(getFoxDraft(), name);

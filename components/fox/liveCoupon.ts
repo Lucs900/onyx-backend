@@ -715,19 +715,15 @@ export function liveSkipChipRows(messages: FoxMessage[], draft: FoxIntakeDraft) 
   return leftoverChipCount(paintedFoxActions(message, draft, true), "skip") > 0 ? 1 : 0;
 }
 
-/** One drop = one received line. Extra copies are leftover paint. */
+/** One stamp per file. A reprint of the same line is leftover. A later file keeps its own. */
 export function withoutDuplicateReceivedLine(messages: FoxMessage[]): FoxMessage[] {
-  let keep = -1;
-  for (let i = 0; i < messages.length; i += 1) {
-    if (isReceivedStatusLine(messages[i]?.text)) {
-      keep = i;
-      break;
-    }
-  }
-  if (keep < 0) return messages;
-  return messages.filter((message, index) => {
+  const seen = new Set<string>();
+  return messages.filter((message) => {
     if (!isReceivedStatusLine(message.text)) return true;
-    return index === keep;
+    const key = message.text.trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 

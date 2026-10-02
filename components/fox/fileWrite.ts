@@ -779,13 +779,27 @@ export const SCHEDULE_E_RENTS_UNREAD_LINE =
 /** Named/received 1040 with unread wages — ask for a W-2, not a second 1040. */
 export const HOUSEHOLD_WAGES_W2_ASK = "A W-2 would show household wages.";
 
+function returnCardConfirmedAt(draft: FoxIntakeDraft): string {
+  const facts = draft.facts ?? {};
+  let at = "";
+  for (const key of Object.keys(facts)) {
+    if (!key.startsWith(RETURN_CARD_LINE_PREFIX)) continue;
+    const stamp = String(facts[key]?.confirmedAt ?? "");
+    if (stamp && (!at || stamp < at)) at = stamp;
+  }
+  return at;
+}
+
+/** The personal packet already on the file. A drop after that card is not this continuation. */
 export function taxReturnPacketDoc(draft: FoxIntakeDraft) {
-  return [...draft.documents].reverse().find(
-    (doc) =>
-      doc.extractClass === "tax_return" &&
-      doc.status !== "failed" &&
-      !isUnreadNote(doc.note),
-  );
+  const cardAt = returnCardConfirmedAt(draft);
+  return [...draft.documents].reverse().find((doc) => {
+    if (doc.extractClass !== "tax_return" || doc.status === "failed" || isUnreadNote(doc.note)) {
+      return false;
+    }
+    if (cardAt && doc.receivedAt > cardAt) return false;
+    return true;
+  });
 }
 
 export function taxReturnPacketNeedsRead(draft: FoxIntakeDraft) {

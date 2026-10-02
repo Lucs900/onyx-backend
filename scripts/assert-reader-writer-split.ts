@@ -26,6 +26,7 @@ import {
   PACKET_READING_LINE,
   PACKET_WAGES_UNREAD_LINE,
   returnCardLinesOnFile,
+  taxReturnPacketDoc,
   hasLockedSuggestion,
   looksLikePaystubFields,
 } from "../components/fox/fileWrite";
@@ -44,7 +45,7 @@ import {
   workspaceGreeting,
   workspacePrompt,
 } from "../components/fox/workspace";
-import { freezeUsedFoxTurns, isReturnCardSpeech } from "../components/fox/liveCoupon";
+import { freezeUsedFoxTurns, isReturnCardSpeech, sealStoredFoxThread, withoutDuplicateReceivedLine } from "../components/fox/liveCoupon";
 import { writeOtherK1Loan } from "../components/fox/household";
 import { waitingOnCopy } from "../components/fox/motion";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
@@ -1222,6 +1223,69 @@ async function main() {
     path: "acr" as const,
     taxReturnPacketRead: "reading" as const,
   };
+  const entityFile = "HO and SOY entity.pdf";
+  const personalStamp = receivedDropCopy(name);
+  const entityStamp = receivedDropCopy(entityFile);
+  const secondDrop = sealStoredFoxThread([
+    { id: "personal-received", role: "system", text: personalStamp },
+    { id: "card", role: "fox", text: letterCard },
+    { id: "used", role: "client", text: "Use this" },
+    { id: "entity-received", role: "system", text: entityStamp },
+    { id: "entity-reprint", role: "fox", text: entityStamp },
+  ]);
+  assert.equal(
+    secondDrop.filter((item) => item.text === personalStamp).length,
+    1,
+    "the personal stamp stays",
+  );
+  assert.equal(
+    secondDrop.filter((item) => item.text === entityStamp).length,
+    1,
+    "a later 1120-S drop keeps its own received line",
+  );
+  assert.equal(
+    withoutDuplicateReceivedLine([
+      { id: "a", role: "system", text: personalStamp },
+      { id: "b", role: "system", text: personalStamp },
+      { id: "c", role: "system", text: entityStamp },
+    ]).length,
+    2,
+  );
+  const afterUse = deskStripActions(secondDrop, paperBase).map((item) => item.label);
+  assert.deepEqual(afterUse, ["Skip", "Upload this", "Looks right"]);
+  assert.ok(
+    !afterUse.some((label) => label === "Create account" || label === "Log in" || label === "Not now"),
+  );
+  const laterEntity = {
+    slot: "other" as const,
+    name: entityFile,
+    type: "application/pdf",
+    size: 1,
+    receivedAt: "2099-01-01T00:00:00.000Z",
+    status: "extracted" as const,
+    extractClass: "tax_return" as const,
+  };
+  const packetTarget = taxReturnPacketDoc({
+    ...paperBase,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 1,
+        receivedAt,
+        status: "extracted",
+        extractClass: "tax_return",
+      },
+      laterEntity,
+    ],
+  });
+  assert.equal(packetTarget?.name, name, "the personal packet is not the later 1120-S");
+  assert.equal(
+    taxReturnPacketDoc({ ...emptyDraft(), documents: [laterEntity] })?.name,
+    entityFile,
+    "with no spoken return, the latest tax return is still the packet",
+  );
   const headingLayer = [
     "Form 1120-S",
     "U.S. Income Tax Return for an S Corporation",
@@ -1796,6 +1860,11 @@ async function main() {
     /if \(!detail\.extractClass && !detail\.emptyRead && !\(detail\.quietLines \?\? \[\]\)\.length\) \{\s*return next;/,
     "received-only without extract still waits",
   );
+  assert.match(
+    alwaysOnSrc,
+    /if \(returnCardLinesOnFile\(live\)\.length > 0\) \{\s*return cut/,
+    "a spoken return keeps the later received line",
+  );
   assert.doesNotMatch(
     alwaysOnSrc,
     /if \(detail\.received\) \{[\s\S]{0,500}pendingProposal && shouldSpeakPendingConfirm/,
@@ -1825,10 +1894,15 @@ async function main() {
     /applyExtractWrite[\s\S]{0,900}emitDocIntake\(\{[\s\S]{0,80}received: emptyRead,\s*extractClass: applied\.extractClass/,
     "the drop emits received with the extract write",
   );
+  assert.match(
+    dropSrc,
+    /if \(returnCardLinesOnFile\(getFoxDraft\(\)\)\.length > 0\) \{\s*emitDocIntake\(\{ received: emptyRead \}\);\s*\}/,
+    "after Use this, the next drop speaks received before extract",
+  );
   assert.doesNotMatch(
     dropSrc,
     /emitDocIntake\(\{ received: emptyRead \}\);\s*try \{/,
-    "do not emit received before extract returns",
+    "a first drop still waits for extract before received",
   );
   const workspaceSrc = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/workspace.ts"),
