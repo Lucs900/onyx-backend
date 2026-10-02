@@ -523,13 +523,17 @@ export function hasRealIncomeLedgerDollars(fields?: Record<string, string> | nul
   return incomeLedgerRowsFromFields(fields ?? {}).length > 0;
 }
 
-/** Form 1040 line 1z after “Add lines 1a through 1h”. Not line 1y, not a filename. */
+/**
+ * Form 1040 line 1z after “Add lines 1a through 1h”. Not line 1y, not a filename.
+ * A regex literal, not RegExp("\\b"): the production bundle turns that \\b into a backspace
+ * and the desk then drops the wage note.
+ */
 export function form1040Line1zAmount(lines: readonly string[]): string {
   const blob = lines.join("\n").replace(/\u00a0/g, " ");
   if (/TAX RETURN TRANSCRIPT|FORM 1040 TAX RETURN TRANSCRIPT|ACCOUNT TRANSCRIPT/i.test(blob)) return "";
-  const wageMoney =
-    "(-?\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|-?\\$?\\s*\\d{3,}(?:\\.\\d+)?|\\(\\s*\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?\\s*\\))";
-  const raw = blob.match(new RegExp(`add lines 1a through 1h\\b[\\s\\S]{0,800}?\\b1z\\s+${wageMoney}`, "i"))?.[1];
+  const raw = blob.match(
+    /add lines 1a through 1h\b[\s\S]{0,800}?\b1z\s+(-?\$?\s*\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\$?\s*\d{3,}(?:\.\d+)?|\(\s*\$?\s*\d{1,3}(?:,\d{3})+(?:\.\d+)?\s*\))/i,
+  )?.[1];
   const n = realLedgerMoney(raw);
   return n != null && n > 0 ? String(n) : "";
 }
