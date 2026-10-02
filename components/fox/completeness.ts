@@ -34,6 +34,8 @@ import {
   matchingCoverLineOnFile,
   remainderProposalWrites,
   federalReturnConfirmCopy,
+  RETURN_CARD_LINE_PREFIX,
+  returnCardSentences,
   sameThinCoverRepeat,
   valuesMatch,
   wageDocsSkipIsAnswer,
@@ -1842,6 +1844,19 @@ export function resolveProposal(
       continue;
     }
     next = writeConfirmedFact(next, extra.field, extra.value, source);
+  }
+  if (proposal.field === "tax_year") {
+    const sentences = returnCardSentences(proposal);
+    if (sentences.length) {
+      const kept = { ...(next.facts ?? {}) };
+      for (const key of Object.keys(kept)) {
+        if (key.startsWith(RETURN_CARD_LINE_PREFIX)) delete kept[key];
+      }
+      next = { ...next, facts: kept };
+      sentences.forEach((sentence, index) => {
+        next = writeConfirmedFact(next, `${RETURN_CARD_LINE_PREFIX}${index}`, sentence, source);
+      });
+    }
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
     next = writeEntityEmployment(next, proposal);

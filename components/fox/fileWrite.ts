@@ -997,6 +997,26 @@ export function federalReturnConfirmCopy(fields: Record<string, string>) {
   return parts.length ? `${parts.join(". ")}.` : "";
 }
 
+/** The sentences already on the return card. Empty when the card has no schedule line. */
+export function returnCardSentences(proposal: FactProposal): string[] {
+  if (proposal.field !== "tax_year") return [];
+  const more = (proposal.extras ?? [])
+    .filter((item) => item.field === "return_line")
+    .map((item) => item.value.replace(/\.$/, "").trim())
+    .filter(Boolean);
+  if (!more.length) return [];
+  const fields = Object.fromEntries([
+    [proposal.field, proposal.value],
+    ...(proposal.extras ?? [])
+      .filter((item) => item.field !== "return_line")
+      .map((item) => [item.field, item.value]),
+  ]);
+  const head = federalReturnConfirmCopy(fields).replace(/\.$/, "").trim();
+  return [head, ...more]
+    .filter(Boolean)
+    .map((sentence) => (sentence.endsWith(".") ? sentence : `${sentence}.`));
+}
+
 export function looksLikeMortgageFields(
   fields?: Record<string, string | null | undefined> | null,
 ): boolean {
@@ -1075,6 +1095,21 @@ export const TAX_RETURN_PAGE_READ_KEYS = ["tax_year", "full_name"] as const;
 
 /** Completeness notepad name after Use this. Not an ID write. */
 export const TAX_RETURN_NAME_FIELD = "tax_return_name";
+
+/** One spoken card sentence per key, so two identical K-1 lines both stay. */
+export const RETURN_CARD_LINE_PREFIX = "return_card_line_";
+
+export function returnCardLinesOnFile(draft: FoxIntakeDraft): string[] {
+  const facts = draft.facts ?? {};
+  return Object.keys(facts)
+    .filter((key) => /^return_card_line_\d+$/.test(key) && facts[key]?.confirmed)
+    .sort(
+      (left, right) =>
+        Number(left.slice(RETURN_CARD_LINE_PREFIX.length)) - Number(right.slice(RETURN_CARD_LINE_PREFIX.length)),
+    )
+    .map((key) => String(facts[key]?.value ?? "").trim())
+    .filter(Boolean);
+}
 
 export function lockTaxReturnPageReadFields(
   fields?: Record<string, string | null | undefined> | null,

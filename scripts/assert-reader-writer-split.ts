@@ -23,6 +23,7 @@ import {
   applyExtractedFields,
   docsInDisplayLabels,
   federalReturnConfirmCopy,
+  returnCardLinesOnFile,
   hasLockedSuggestion,
   looksLikePaystubFields,
 } from "../components/fox/fileWrite";
@@ -1093,6 +1094,55 @@ async function main() {
   assert.equal(readerWageLine(letterMap), null);
   assert.equal(readerMapOpensReturnCard(letterMap), true);
   assert.ok(letterSpoken.every((line) => !/2,563,436|3,033,949|8,919|113,045|92-3033949/.test(line)));
+  const letterWrite = applyExtractedFields(
+    {
+      ...emptyDraft(),
+      workspaceFlow: true,
+      documents: [
+        {
+          slot: "other",
+          name,
+          type: "application/pdf",
+          size: 1,
+          receivedAt,
+          status: "received",
+        },
+      ],
+    },
+    {
+      extractClass: "tax_return",
+      confidence: 0.94,
+      fields: { tax_year: "2024", full_name: "VOUCH EIM SOY and SICHIV HO" },
+      readerMap: letterMap,
+    },
+  );
+  const letterCard = proposalAskCopy(letterWrite.draft.pendingProposal);
+  const letterSkip = resolveProposal(letterWrite.draft, "decline");
+  assert.equal(returnCardLinesOnFile(letterSkip).length, 0, "Skip leaves the spoken lines off File");
+  assert.equal(letterSkip.incomeType.value ?? "", "");
+  assert.ok(
+    !previewFacts(letterSkip).some((fact) => /60,343|26,351|106,404|74,952|27,324|92-3033949/.test(fact.value)),
+    "Skip leaves the pad empty of the return lines",
+  );
+  const letterUsed = resolveProposal(letterWrite.draft, "accept");
+  const writtenLines = returnCardLinesOnFile(letterUsed);
+  assert.equal(`${writtenLines.join(" ")} Use this?`, letterCard, "Use this writes the lines the card spoke");
+  assert.equal(
+    writtenLines.filter((line) => line === "HO & SOY INC · S corp · $26,351.").length,
+    2,
+    "both K-1 lines stay",
+  );
+  assert.equal(letterUsed.incomeType.value ?? "", "", "Use this does not set Income");
+  assert.notEqual(letterUsed.incomeType.value, "both");
+  const painted = previewFacts(letterUsed);
+  for (const line of writtenLines) {
+    assert.equal(painted.filter((fact) => fact.value === line).length, writtenLines.filter((item) => item === line).length);
+  }
+  const paintedText = painted.map((fact) => fact.value).join("\n");
+  assert.doesNotMatch(paintedText, /92-3033949|8,919|2,563,436|3,033,949|96,000/);
+  assert.doesNotMatch(paintedText, /\bown(?:s|ed|ership)?\b/i);
+  assert.ok(!painted.some((fact) => fact.id === "qualifying" || fact.id === "income"));
+  assert.ok(!docsInDisplayLabels(letterUsed).includes("Paystubs in"));
   const headingAsked = applyExtractedFields(emptyDraft(), {
     extractClass: "tax_return",
     confidence: 0.94,

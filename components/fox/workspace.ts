@@ -176,6 +176,7 @@ import {
   PACKET_READING_LINE,
   PACKET_NO_K1_C_LINE,
   SCHEDULE_E_RENTS_UNREAD_LINE,
+  returnCardLinesOnFile,
   taxReturnStructureValue,
   canSpeakDocStamp,
   transcriptSpeakKey,
@@ -11289,13 +11290,24 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
     });
   }
 
-  const taxReturnLine = taxReturnStructureValue(draft);
-  if (taxReturnLine) {
-    facts.push({
-      id: "tax-return",
-      label: "Return",
-      value: taxReturnLine,
+  const cardLines = returnCardLinesOnFile(draft);
+  if (cardLines.length) {
+    cardLines.forEach((line, index) => {
+      facts.push({
+        id: index === 0 ? "tax-return" : `return-line-${index}`,
+        label: "Return",
+        value: line,
+      });
     });
+  } else {
+    const taxReturnLine = taxReturnStructureValue(draft);
+    if (taxReturnLine) {
+      facts.push({
+        id: "tax-return",
+        label: "Return",
+        value: taxReturnLine,
+      });
+    }
   }
 
   const docs = docsFact(draft);
