@@ -198,6 +198,15 @@ const LETTER_ROWS = [
   "VOUCH EIM SOY 617-55-6419",
   "DONUT SHOP 722511",
   "VOUCH EIM SOY",
+  "13 Depreciation and section 179 expense",
+  "(see instructions) 13 4,289.",
+  "31 Net profit or (loss). Subtract line 30 from line 29.",
+  "enter on Form 1041, line 3. 31 24,457.",
+  "Form 1041, line 3. 32b Some investment",
+  "Part V Other Expenses. List below business expenses not included on lines 8-26, line 27b, or line 30.",
+  "Amortization 2,029.",
+  "48 Total other expenses. Enter here and on line 27a. 48 8,979.",
+  "28 Total expenses before expenses for business use of home. 28 28,876.",
   "SCHEDULE E Supplemental Income and Loss OMB No. 1545-0074",
   "Part I Income or Loss From Rental Real Estate and Royalties",
   "A 242 N ABEL ST, MILPITAS, CA 95035",
@@ -1085,7 +1094,7 @@ async function main() {
   const letterMap = readerMapFromPrintedLines(LETTER_ROWS);
   const letterSpoken = readerBusinessLines(letterMap).map((line) => readerBusinessSpeech(line));
   assert.deepEqual(letterSpoken, [
-    "Schedule C under VOUCH EIM SOY",
+    "Schedule C · VOUCH EIM SOY · donut shop · net $24,457 · amortization $2,029 · depreciation $4,289",
     "Schedule E · 242 N ABEL ST, MILPITAS, CA 95035 · Commercial · Rents received $106,404 · Net $74,952 · Rent paid to Landlord $27,324",
     "Schedule E · L&H VENTURES LLC · partnership · passive · $60,343",
     "HO & SOY INC · S corp · $26,351",

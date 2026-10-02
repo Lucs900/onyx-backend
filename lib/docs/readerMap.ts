@@ -246,7 +246,24 @@ export function readerBusinessSpeech(line: ReaderLine) {
   const amount = String(line.value ?? "").replace(/[^\d.]/g, "");
   const money = Number(amount) > 0 ? `$${Number(amount).toLocaleString("en-US")}` : "";
   if (line.kind === "schedule_c") {
-    const who = String(line.value ?? "").trim();
+    const raw = String(line.value ?? "").trim();
+    const digits = raw.replace(/,/g, "");
+    const net = /^\d+(?:\.\d+)?$/.test(digits) ? Number(digits) : 0;
+    const label = String(line.label ?? "").trim();
+    if (net > 0 && label && label !== "Schedule C") {
+      const names: string[] = [];
+      const sides: string[] = [];
+      for (const bit of label.split(" · ")) {
+        const side = bit.trim().match(/^(amortization|depreciation)\s+(\d+(?:\.\d+)?)$/i);
+        if (side) {
+          sides.push(`${side[1]!.toLowerCase()} $${Number(side[2]).toLocaleString("en-US")}`);
+        } else if (bit.trim()) {
+          names.push(bit.trim());
+        }
+      }
+      return ["Schedule C", ...names, `net $${net.toLocaleString("en-US")}`, ...sides].join(" · ");
+    }
+    const who = raw;
     return who ? `Schedule C under ${who}` : "Schedule C";
   }
   if (line.kind === "schedule_e") {
@@ -312,7 +329,11 @@ function scheduleHeading(line: string): "c" | "e" | "k1" | "other" | null {
     return "k1";
   }
   if (t.length > 96) return null;
-  if (/^\s*(?:schedule\s+[a-z0-9]|form\s+\d{3,4})\b/i.test(head)) return "other";
+  if (/^\s*(?:schedule\s+[a-z0-9]|form\s+\d{3,4})\b/i.test(head)) {
+    // "Form 1041, line 3" is a cross-reference on Schedule C, not the next form.
+    if (/\bline\b/i.test(head)) return null;
+    return "other";
+  }
   return null;
 }
 
@@ -422,6 +443,39 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   let k1BareClosed = false;
   let wantOrdinary = false;
   let bare: string[] = [];
+  let cWho = "";
+  let cBusiness = "";
+  let cNet = "";
+  let cAmort = "";
+  let cDepr = "";
+  let cWantNet = false;
+  let cWantDepr = false;
+
+  const flushScheduleC = () => {
+    const who = cWho;
+    const business = cBusiness;
+    const net = cNet;
+    const amort = cAmort;
+    const depr = cDepr;
+    cWho = "";
+    cBusiness = "";
+    cNet = "";
+    cAmort = "";
+    cDepr = "";
+    cWantNet = false;
+    cWantDepr = false;
+    if (net) {
+      const bits = [
+        who,
+        business,
+        amort ? `amortization ${amort}` : "",
+        depr ? `depreciation ${depr}` : "",
+      ].filter(Boolean);
+      out.push({ kind: "schedule_c", value: net, label: bits.join(" · ") });
+      return;
+    }
+    if (who) out.push({ kind: "schedule_c", value: who, label: "Schedule C" });
+  };
 
   const k1Label = () => [pendingK1, k1Role || "S corp"].filter(Boolean).join(" · ");
 
@@ -437,6 +491,7 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
 
   const start = (next: "c" | "e" | "k1" | null) => {
     if (block === "k1") flushBare();
+    if (block === "c" && next !== "c") flushScheduleC();
     block = next;
     budget = next === "c" ? 12 : 0;
     wantRentalNet = false;
@@ -491,15 +546,29 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
     }
 
     if (block === "c") {
-      budget -= 1;
       // The proprietor row prints the SSN on the same baseline. The name is the row.
       const proprietor = line.replace(/\b\d{3}-\d{2}-\d{4}\b/g, " ").replace(/\s+/g, " ").trim();
-      if (!isFormChromeName(proprietor) && looksLikePersonName(proprietor) && !/\bschedule\s+c\b/i.test(proprietor)) {
-        out.push({ kind: "schedule_c", value: proprietor, label: "Schedule C" });
-        block = null;
-      } else if (budget <= 0) {
-        block = null;
+      if (!cWho && !isFormChromeName(proprietor) && looksLikePersonName(proprietor) && !/\bschedule\s+c\b/i.test(proprietor)) {
+        cWho = proprietor;
       }
+      if (!cBusiness) {
+        const profession = line.match(/^([A-Za-z][A-Za-z &'.,-]{1,60})\s+(\d{6})$/);
+        if (profession) cBusiness = profession[1]!.replace(/\s+/g, " ").trim().toLowerCase();
+      }
+      if (/\b13\s+depreciation\b/i.test(line)) cWantDepr = true;
+      const depr = line.match(/(?:^|\s)13\s+(\d{1,3}(?:,\d{3})+)/);
+      if (depr && (cWantDepr || /\bdepreciation\b/i.test(line))) {
+        cDepr = depr[1]!.replace(/,/g, "");
+        cWantDepr = false;
+      }
+      if (/\b31\s+net profit\b/i.test(line)) cWantNet = true;
+      const net = line.match(/(?:^|\s)31\s+(\d{1,3}(?:,\d{3})+)/);
+      if (net && cWantNet) {
+        cNet = net[1]!.replace(/,/g, "");
+        cWantNet = false;
+      }
+      const amort = line.match(/^amortization\s+(\d{1,3}(?:,\d{3})+)/i);
+      if (amort) cAmort = amort[1]!.replace(/,/g, "");
       continue;
     }
 
@@ -657,6 +726,7 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       if (!k1TookOrdinary && !k1BareClosed && /[A-Za-z]/.test(line)) k1BareClosed = true;
     }
   }
+  if (block === "c") flushScheduleC();
   if (block === "k1") flushBare();
 
   const hasE = cleaned.some((line) => scheduleHeading(line) === "e");
