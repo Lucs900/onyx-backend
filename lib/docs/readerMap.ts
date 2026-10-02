@@ -369,8 +369,7 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   let wantOrdinary = false;
   let bare: string[] = [];
 
-  const k1Label = () =>
-    [pendingK1, k1Role || "S corp", k1Ein ? `EIN ${k1Ein}` : ""].filter(Boolean).join(" · ");
+  const k1Label = () => [pendingK1, k1Role || "S corp"].filter(Boolean).join(" · ");
 
   const flushBare = () => {
     if (!k1TookOrdinary && pendingK1) {
@@ -450,7 +449,7 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
           partEmitted.add(letter);
           const amount = amounts[0]!;
           if (stored.code === "S") {
-            const label = [stored.entity, "S corp", stored.ein ? `EIN ${stored.ein}` : ""].filter(Boolean).join(" · ");
+            const label = [stored.entity, "S corp"].filter(Boolean).join(" · ");
             out.push({ kind: "k1", value: amount, label });
           } else {
             const role = [stored.code === "P" ? "partnership" : "", passiveIncomeColumn ? "passive" : ""]

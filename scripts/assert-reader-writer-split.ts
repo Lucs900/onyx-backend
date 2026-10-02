@@ -1075,12 +1075,12 @@ async function main() {
   assert.deepEqual(letterSpoken, [
     "Schedule C under VOUCH EIM SOY",
     "Schedule E · L&H VENTURES LLC · partnership · passive · $60,343",
-    "HO & SOY INC · S corp · EIN 92-3033949 · $26,351",
-    "HO & SOY INC · S corp · EIN 92-3033949 · $26,351",
+    "HO & SOY INC · S corp · $26,351",
+    "HO & SOY INC · S corp · $26,351",
   ]);
   assert.equal(readerWageLine(letterMap), null);
   assert.equal(readerMapOpensReturnCard(letterMap), true);
-  assert.ok(letterSpoken.every((line) => !/2,563,436|3,033,949|8,919|113,045/.test(line)));
+  assert.ok(letterSpoken.every((line) => !/2,563,436|3,033,949|8,919|113,045|92-3033949/.test(line)));
   const headingAsked = applyExtractedFields(emptyDraft(), {
     extractClass: "tax_return",
     confidence: 0.94,
