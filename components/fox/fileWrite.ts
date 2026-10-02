@@ -91,6 +91,7 @@ import {
   readerMapSchedulePacketUnread,
   readerWageLine,
   repeatedMarkName,
+  tradeStyleName,
   type ReaderMap,
 } from "@/lib/docs/readerMap";
 import {
@@ -1257,6 +1258,7 @@ export function k1PersonName(raw: string, entity = ""): string {
   if (words.length < 2 || words.length > 4) return "";
   if (!words.every((word) => /^[A-Za-z][A-Za-z.'-]*$/.test(word))) return "";
   if (repeatedMarkName(name)) return "";
+  if (tradeStyleName(name)) return "";
   if (/inc|llc|corp|form|schedule|shareholder|ordinary|wage|heading|address|street/i.test(name)) {
     return "";
   }

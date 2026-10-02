@@ -163,9 +163,32 @@ export function repeatedMarkName(line: string) {
   return words.every((word) => word.toLowerCase() === token);
 }
 
+/** A trade name puts a connector between the words. That line is a business, not a person. */
+export function tradeStyleName(line: string) {
+  const words = line.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (words.length < 3) return false;
+  return words.slice(1, -1).some((word) => /^(?:by|dba)$/i.test(word.replace(/\./g, "")));
+}
+
+function businessIdentityMark(line: string) {
+  return /trade name|doing business as|\bd\.?\s*b\.?\s*a\.?\b|principal business activity|principal product or service|\bbusiness name\b|name of (?:the )?business/i.test(
+    line,
+  );
+}
+
+function businessIdentityHasName(line: string) {
+  const tail = line
+    .replace(
+      /^.*?(?:trade name|doing business as|d\.?\s*b\.?\s*a\.?|principal business activity|principal product or service|business name|name of (?:the )?business)\s*/i,
+      "",
+    )
+    .trim();
+  return Boolean(tail) && tail.toLowerCase() !== line.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function looksLikePersonName(line: string) {
   const t = line.replace(/\s+/g, " ").trim();
-  if (!t || t.length > 48 || isFormChromeName(t) || repeatedMarkName(t)) return false;
+  if (!t || t.length > 48 || isFormChromeName(t) || repeatedMarkName(t) || tradeStyleName(t)) return false;
   if (/\$|\d{3,}|form|schedule|return|california wages|shareholder|corporation|inc\.?$|llc|basis|authorization/i.test(t)) {
     return false;
   }
@@ -457,6 +480,8 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   let k1Person = "";
   let k1OrdinaryAmount = "";
   let k1PersonEmitted = false;
+  let k1CorpIdentity = false;
+  let k1SkipBusinessName = false;
   let cWho = "";
   let cBusiness = "";
   let cNet = "";
@@ -541,6 +566,8 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       k1Person = "";
       k1OrdinaryAmount = "";
       k1PersonEmitted = false;
+      k1CorpIdentity = false;
+      k1SkipBusinessName = false;
     }
   };
 
@@ -717,9 +744,21 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       if (/\bs\s*corp/i.test(line)) k1Role = k1Role || "S corp";
       const ein = line.match(/\b(\d{2}-\d{7})\b/);
       if (ein) k1Ein = ein[1] ?? k1Ein;
+      if (/corporation'?s name\b/i.test(line)) k1CorpIdentity = true;
+      if (/shareholder'?s name\b/i.test(line)) {
+        k1CorpIdentity = false;
+        k1SkipBusinessName = false;
+      }
+      if (/disregarded entity|entity responsible for reporting|what type of entity is this shareholder/i.test(line)) {
+        k1SkipBusinessName = true;
+      }
+      if (businessIdentityMark(line)) k1SkipBusinessName = !businessIdentityHasName(line);
       if (!k1Person && looksLikePersonName(line)) {
-        k1Person = line.replace(/\s+/g, " ").trim();
-        emitK1Person();
+        if (k1CorpIdentity || k1SkipBusinessName) k1SkipBusinessName = false;
+        else {
+          k1Person = line.replace(/\s+/g, " ").trim();
+          emitK1Person();
+        }
       }
       if (!k1Person) {
         const labeled = line.match(

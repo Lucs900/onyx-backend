@@ -18,6 +18,7 @@ import {
   readerMapFromPrintedLines,
   readerMapNeverOpensStub,
   readerWageLine,
+  tradeStyleName,
 } from "../lib/docs/readerMap";
 import {
   applyExtractedFields,
@@ -1363,6 +1364,78 @@ async function main() {
     markThenPerson.lines.filter((line) => line.kind === "k1_box1").map((line) => line.value),
     ["Sichiv Ho"],
     "a later named person is the Box 1 line",
+  );
+  assert.equal(tradeStyleName("EDNA DONUT BY GEORGE"), true);
+  assert.equal(tradeStyleName("Sichiv Ho"), false);
+  assert.equal(tradeStyleName("Mary Ann Lee"), false);
+  assert.equal(k1PersonName("EDNA DONUT BY GEORGE", "HO & SOY INC"), "", "a trade-style name is not a person");
+  assert.equal(k1PersonName("Mary Ann Lee", "HO & SOY INC"), "Mary Ann Lee");
+  const tradeStyleLayer = [
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "HO & SOY INC",
+    "EDNA DONUT BY GEORGE",
+    "1 Ordinary business income (loss) 26,351",
+  ];
+  const tradeStyleMap = readerMapFromPrintedLines(tradeStyleLayer);
+  assert.equal(tradeStyleMap.lines.some((line) => line.kind === "k1_box1"), false);
+  assert.ok(!tradeStyleMap.names.some((item) => /edna|donut|george/i.test(item)));
+  const tradeStyleWrite = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      k1_partner_name: "EDNA DONUT BY GEORGE",
+      k1_ordinary_income: "26351",
+    },
+    readerMap: tradeStyleMap,
+  });
+  assert.equal(tradeStyleWrite.draft.pendingProposal, null, "a trade-style name does not open Use this");
+  assert.deepEqual(
+    previewFacts(tradeStyleWrite.draft).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    previewFacts(paperBase).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    "1120-S stays Still needed when the only name is a trade name",
+  );
+  assert.equal(tradeStyleWrite.draft.facts?.k1_partner_name, undefined);
+  assert.equal(tradeStyleWrite.draft.incomeType.value ?? "", "");
+  const corpTradeLayer = [
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "Corporation's name, address, city, state, and ZIP code",
+    "HO & SOY INC",
+    "Harbor Bake Shop",
+    "Trade name",
+    "North Bakery",
+    "1 Ordinary business income (loss) 26,351",
+  ];
+  const corpTradeMap = readerMapFromPrintedLines(corpTradeLayer);
+  assert.equal(corpTradeMap.lines.some((line) => line.kind === "k1_box1"), false, "a business-marked name is not Box 1");
+  const tradeThenPerson = readerMapFromPrintedLines([
+    ...corpTradeLayer,
+    "Shareholder's name, address, city, state, and ZIP code",
+    "Mary Ann Lee",
+  ]);
+  assert.deepEqual(
+    tradeThenPerson.lines.filter((line) => line.kind === "k1_box1").map((line) => line.value),
+    ["Mary Ann Lee"],
+    "a later named person still opens Box 1",
+  );
+  const responsibleMap = readerMapFromPrintedLines([
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "HO & SOY INC",
+    "If the shareholder is a disregarded entity, a trust, an estate, or a nominee or similar person, enter the individual or entity responsible for reporting:",
+    "Harbor Bake Shop",
+    "Shareholder's name, address, city, state, and ZIP code",
+    "Mary Ann Lee",
+    "1 Ordinary business income (loss) 26,351",
+  ]);
+  assert.deepEqual(
+    responsibleMap.lines.filter((line) => line.kind === "k1_box1").map((line) => line.value),
+    ["Mary Ann Lee"],
+    "the entity responsible for reporting is not the shareholder",
   );
   const entityLayer = [
     ...headingLayer,
