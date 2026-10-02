@@ -45,6 +45,7 @@ import {
   workspacePrompt,
 } from "../components/fox/workspace";
 import { freezeUsedFoxTurns, isReturnCardSpeech } from "../components/fox/liveCoupon";
+import { writeOtherK1Loan } from "../components/fox/household";
 import { waitingOnCopy } from "../components/fox/motion";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 import { INCOME_BUBBLES } from "../components/fox/types";
@@ -1216,6 +1217,147 @@ async function main() {
   assert.ok(!painted.some((fact) => fact.id === "income" || fact.id === "qualifying" || fact.label === "Income"));
   assert.equal(letterUsed.facts?.wages, undefined, "the wage note is not a written income dollar");
   assert.equal(letterUsed.facts?.household_wages, undefined);
+  const paperBase = {
+    ...letterUsed,
+    path: "acr" as const,
+    taxReturnPacketRead: "reading" as const,
+  };
+  const headingLayer = [
+    "Form 1120-S",
+    "U.S. Income Tax Return for an S Corporation",
+    "Name of corporation HO & SOY INC",
+    "7 Compensation of officers 96,000",
+    "1c Gross receipts or sales 535,394",
+  ];
+  const entityHeadingMap = readerMapFromPrintedLines(headingLayer);
+  assert.equal(entityHeadingMap.lines.some((line) => line.kind === "k1_box1"), false);
+  const headingOnly = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      k1_partner_name: "Not On The Page",
+      k1_ordinary_income: "26351",
+      officer_compensation: "96000",
+      gross_receipts: "535394",
+      ein: "92-3033949",
+    },
+    readerMap: entityHeadingMap,
+  });
+  assert.equal(headingOnly.draft.pendingProposal, null, "a heading does not open Use this");
+  assert.deepEqual(
+    previewFacts(headingOnly.draft).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    previewFacts(paperBase).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    "a heading does not clear the 1120-S line",
+  );
+  assert.equal(headingOnly.draft.facts?.wages, undefined);
+  assert.equal(headingOnly.draft.facts?.gross_receipts, undefined);
+  assert.equal(headingOnly.draft.facts?.officer_compensation, undefined);
+  assert.equal(headingOnly.draft.facts?.k1_partner_name, undefined);
+  assert.equal(headingOnly.draft.incomeType.value ?? "", "");
+  const entityLayer = [
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "Shareholder's Share of Income, Deductions, Credits, etc.",
+    "HO & SOY INC",
+    "Shareholder's name, address, city, state, and ZIP code",
+    "Sichiv Ho",
+    "1 Ordinary business income (loss) 26,351",
+    "Schedule K-1 (Form 1120-S)",
+    "HO & SOY INC",
+    "Shareholder's name, address, city, state, and ZIP code",
+    "Vouch Eim Soy",
+    "1 Ordinary business income (loss) 26,351",
+  ];
+  const entityMap = readerMapFromPrintedLines(entityLayer);
+  const box1 = entityMap.lines.filter((line) => line.kind === "k1_box1");
+  assert.deepEqual(
+    box1.map((line) => line.value),
+    ["Sichiv Ho", "Vouch Eim Soy"],
+    "Box 1 people come from the K-1 text layer",
+  );
+  const entityPaper = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      k1_partner_name: "Not On The Page",
+      officer_compensation: "96000",
+      gross_receipts: "535394",
+      ein: "92-3033949",
+    },
+    readerMap: entityMap,
+  });
+  const personAsk = nextFoxAsk(entityPaper.draft);
+  assert.match(personAsk.text, /Form 1120-S for HO & SOY INC/);
+  assert.match(personAsk.text, /K-1 Box 1 is Sichiv Ho/);
+  assert.match(personAsk.text, /Use this\?$/);
+  assert.doesNotMatch(personAsk.text, /a month|suggesting|92-3033949|officer wages|Reading the rest/i);
+  assert.deepEqual((personAsk.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+  assert.deepEqual(
+    deskStripActions([{ id: "k1-person", role: "fox", text: personAsk.text }], entityPaper.draft).map(
+      (item) => item.label,
+    ),
+    ["Use this", "Change"],
+  );
+  assert.ok(
+    !(personAsk.actions ?? []).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+  );
+  assert.equal(entityPaper.draft.facts?.wages, undefined);
+  assert.equal(entityPaper.draft.facts?.gross_receipts, undefined);
+  assert.equal(entityPaper.draft.incomeType.value ?? "", "");
+  assert.deepEqual(returnCardLinesOnFile(entityPaper.draft), writtenLines);
+  const entityUsed = resolveProposal(entityPaper.draft, "accept");
+  assert.equal(entityUsed.facts?.k1_partner_name?.value, "Sichiv Ho");
+  assert.equal(entityUsed.facts?.other_k1_partner_name, undefined);
+  assert.equal(entityUsed.facts?.qualifying_income, undefined);
+  assert.equal(entityUsed.facts?.wages, undefined);
+  assert.equal(entityUsed.facts?.officer_compensation, undefined);
+  assert.equal(entityUsed.facts?.gross_receipts, undefined);
+  assert.equal(entityUsed.incomeType.value ?? "", "");
+  assert.doesNotMatch(JSON.stringify(entityUsed.facts ?? {}), /92-3033949/);
+  assert.deepEqual(returnCardLinesOnFile(entityUsed), writtenLines, "the six return rows stay");
+  assert.ok(returnCardLinesOnFile(entityUsed).some((line) => /ABEL/i.test(line)));
+  assert.deepEqual(
+    previewFacts(entityUsed).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    ["W-2s for the $96,000.", "L&H VENTURES LLC. 1065."],
+    "Use this clears only the 1120-S paper",
+  );
+  assert.ok(!previewFacts(entityUsed).some((fact) => fact.id === "qualifying" || fact.label === "Income"));
+  const otherAsk = nextFoxAsk({ ...entityUsed, path: "acr", taxReturnPacketRead: "reading" });
+  assert.equal(otherAsk.text, "Other K-1 — is that person on this loan?");
+  assert.deepEqual((otherAsk.actions ?? []).map((item) => item.label), ["Yes", "No", "Skip"]);
+  const otherDraft = { ...entityUsed, path: "acr" as const, taxReturnPacketRead: "reading" as const };
+  assert.deepEqual(
+    deskStripActions([{ id: "other-k1", role: "fox", text: otherAsk.text }], otherDraft).map((item) => item.label),
+    ["Yes", "No", "Skip"],
+  );
+  assert.ok(
+    !(otherAsk.actions ?? []).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+  );
+  const otherYes = writeOtherK1Loan(entityUsed, true);
+  assert.equal(otherYes.pendingProposal, null, "Yes does not open a second income row");
+  assert.equal(otherYes.facts?.qualifying_income, undefined);
+  assert.equal(otherYes.facts?.other_k1_box1, undefined);
+  assert.equal(otherYes.incomeType.value ?? "", "");
+  assert.notEqual(nextFoxAsk(otherYes).text, otherAsk.text, "the other K-1 asks once");
+  const afterOther = deskStripActions(
+    [{ id: "other-k1", role: "fox", text: otherAsk.text }],
+    otherYes,
+  ).map((item) => item.label);
+  assert.ok(
+    !afterOther.some((label) => label === "Create account" || label === "Log in" || label === "Not now"),
+    "answering the other K-1 does not put account chips on the composer",
+  );
+  assert.deepEqual(returnCardLinesOnFile(otherYes), writtenLines);
   assert.doesNotMatch(
     painted.filter((fact) => fact.label === "Still needed").map((fact) => fact.value).join("\n"),
     /Sichiv|Vouch|92-3033949|Partnership|S corp/,

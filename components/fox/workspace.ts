@@ -179,6 +179,8 @@ import {
   SCHEDULE_E_RENTS_UNREAD_LINE,
   returnCardLinesOnFile,
   returnPapersOnFile,
+  K1_BOX1_PERSON_FIELD,
+  k1Box1PersonCopy,
   taxReturnStructureValue,
   canSpeakDocStamp,
   transcriptSpeakKey,
@@ -2579,6 +2581,12 @@ function liveProposalAsk(
   followUp?: string;
   actions?: FoxAction[];
 } {
+  if (proposal.field === K1_BOX1_PERSON_FIELD) {
+    return {
+      text: k1Box1PersonCopy(proposal),
+      actions: incomeConfirmActions(),
+    };
+  }
   if (isOtherK1Box1Proposal(proposal)) {
     return otherK1Box1ConfirmCopy(Number(proposal.value) || otherK1Box1Monthly(draft));
   }
@@ -3003,6 +3011,12 @@ export function docReactionAsk(
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
   if (draft.awaitingCoverWageGap) return coverWageGapAsk();
+  if (draft.pendingProposal?.field === K1_BOX1_PERSON_FIELD) {
+    return liveProposalAsk(draft, draft.pendingProposal);
+  }
+  if (draft.returnPaperOtherK1 && !draft.otherK1LoanAsked && !draft.pendingProposal) {
+    return otherK1LoanAskCopy(draft);
+  }
   if (taxReturnPacketHoldAsk(draft)) return packetReadingAsk(draft);
   if (taxReturnPacketCloseAskOpen(draft)) {
     return { text: PACKET_NO_K1_C_LINE, actions: finishLineActions(draft) };
@@ -4207,6 +4221,12 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   facts?: ReturnType<typeof workspacePromptCopy>["facts"];
   actions?: FoxAction[];
 } {
+  if (draft.pendingProposal?.field === K1_BOX1_PERSON_FIELD && shouldSpeakPendingConfirm(draft)) {
+    return liveProposalAsk(draft, draft.pendingProposal);
+  }
+  if (draft.returnPaperOtherK1 && !draft.otherK1LoanAsked && !draft.pendingProposal) {
+    return otherK1LoanAskCopy(draft);
+  }
   if (taxReturnPacketHoldAsk(draft)) return packetReadingAsk(draft);
   if (
     firstAccountOfferOpen(draft) &&
@@ -5087,6 +5107,10 @@ export function workspacePrompt(draft: FoxIntakeDraft): FoxPrompt {
   }
   if (entityYearsOpen(draft) && !namedTwoK1WhoAskPending(draft) && !k1WhoConfirmPending(draft)) {
     return "confirm-proposal";
+  }
+  if (draft.pendingProposal?.field === K1_BOX1_PERSON_FIELD) return "confirm-proposal";
+  if (draft.returnPaperOtherK1 && !draft.otherK1LoanAsked && !draft.pendingProposal) {
+    return "other-k1-loan";
   }
   if (taxReturnPacketHoldAsk(draft)) return "packet-read";
   if (draft.scheduleECashUnread) return "schedule-e-unread";

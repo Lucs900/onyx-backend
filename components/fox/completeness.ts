@@ -36,6 +36,9 @@ import {
   federalReturnConfirmCopy,
   RETURN_CARD_LINE_PREFIX,
   RETURN_PAPER_PREFIX,
+  K1_BOX1_PERSON_FIELD,
+  drop1120sReturnPaper,
+  k1Box1PersonCopy,
   returnCardOpenPapers,
   returnCardBackNotes,
   returnCardSentences,
@@ -1069,6 +1072,7 @@ export function purchaseSplitActions(proposal?: FactProposal | null): FoxAction[
 }
 
 export function proposalAskCopy(proposal: FactProposal) {
+  if (proposal.field === K1_BOX1_PERSON_FIELD) return k1Box1PersonCopy(proposal);
   if (isPurchaseSplitReconcileProposal(proposal)) {
     return purchaseSplitAskCopy(proposal);
   }
@@ -1707,6 +1711,22 @@ export function resolveProposal(
   if (isOtherK1Box1Proposal(proposal)) {
     if (winner === "accept") return writeOtherK1Box1({ ...draft, pendingProposal: null });
     return { ...draft, pendingProposal: null };
+  }
+  if (proposal.field === K1_BOX1_PERSON_FIELD) {
+    if (winner !== "accept") return { ...draft, pendingProposal: null };
+    const entity = proposal.extras?.find((item) => item.field === "entity_name")?.value ?? "";
+    const otherName = proposal.extras?.find((item) => item.field === "other_k1_partner_name")?.value ?? "";
+    const otherOrdinary = proposal.extras?.find((item) => item.field === "other_k1_ordinary_income")?.value ?? "";
+    const named = writeConfirmedFact(draft, "k1_partner_name", proposal.value.trim(), "document");
+    const cleared = drop1120sReturnPaper(named, entity);
+    const hasOther = Boolean(otherName.trim() || otherOrdinary.trim());
+    return {
+      ...cleared,
+      pendingProposal: null,
+      pendingConflict: null,
+      returnPaperOtherK1: hasOther,
+      otherK1LoanAsked: hasOther ? false : cleared.otherK1LoanAsked,
+    };
   }
   if (winner === "decline") {
     if (proposal.field === ESTIMATED_HOUSING_FIELD) {

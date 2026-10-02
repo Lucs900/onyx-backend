@@ -414,6 +414,8 @@ export type FoxIntakeDraft = {
   whoOnLoanNameAsked?: boolean;
   /** Second name seen on a page. Not a coborrower row. */
   pageOtherName?: string;
+  /** Open 1120-S paper cleared one named Box 1. The other K-1 asks once. Not income. */
+  returnPaperOtherK1?: boolean;
   /** Two 50% K-1s — asked whether the other K-1 person is on this loan. */
   otherK1LoanAsked?: boolean;
   /** Yes writes a second Box 1 row. No drops Other K-1. Skip keeps it on Still useful. */

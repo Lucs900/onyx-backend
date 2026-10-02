@@ -446,6 +446,9 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   let k1BareClosed = false;
   let wantOrdinary = false;
   let bare: string[] = [];
+  let k1Person = "";
+  let k1OrdinaryAmount = "";
+  let k1PersonEmitted = false;
   let cWho = "";
   let cBusiness = "";
   let cNet = "";
@@ -482,6 +485,17 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
 
   const k1Label = () => [pendingK1, k1Role || "S corp"].filter(Boolean).join(" · ");
 
+  /** Box 1 ordinary plus a person printed on this K-1. A heading is not that person. */
+  const emitK1Person = () => {
+    if (k1PersonEmitted || !k1Person || !k1OrdinaryAmount || !pendingK1) return;
+    out.push({
+      kind: "k1_box1",
+      value: k1Person,
+      label: `${pendingK1} · ${k1OrdinaryAmount}`,
+    });
+    k1PersonEmitted = true;
+  };
+
   const flushBare = () => {
     if (!k1TookOrdinary && pendingK1) {
       for (const amount of bare) {
@@ -516,6 +530,9 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       k1BareClosed = false;
       wantOrdinary = false;
       bare = [];
+      k1Person = "";
+      k1OrdinaryAmount = "";
+      k1PersonEmitted = false;
     }
   };
 
@@ -692,10 +709,26 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       if (/\bs\s*corp/i.test(line)) k1Role = k1Role || "S corp";
       const ein = line.match(/\b(\d{2}-\d{7})\b/);
       if (ein) k1Ein = ein[1] ?? k1Ein;
+      if (!k1Person && looksLikePersonName(line)) {
+        k1Person = line.replace(/\s+/g, " ").trim();
+        emitK1Person();
+      }
+      if (!k1Person) {
+        const labeled = line.match(
+          /shareholder'?s name, address, city, state(?:, and ZIP code)?\s+([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3})\b/i,
+        );
+        const captured = labeled?.[1]?.replace(/\s+/g, " ").trim() ?? "";
+        if (captured && looksLikePersonName(captured)) {
+          k1Person = captured;
+          emitK1Person();
+        }
+      }
       if (/ordinary business income/i.test(line)) {
         const amount = qualifiedAmount(line, k1Ein);
         if (amount && pendingK1) {
           out.push({ kind: "k1", value: amount, label: k1Label() });
+          k1OrdinaryAmount = amount;
+          emitK1Person();
           k1TookOrdinary = true;
           bare = [];
           wantOrdinary = false;
@@ -709,6 +742,8 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
         const amount = qualifiedAmount(line, k1Ein);
         if (amount && pendingK1) {
           out.push({ kind: "k1", value: amount, label: k1Label() });
+          k1OrdinaryAmount = amount;
+          emitK1Person();
           k1TookOrdinary = true;
           bare = [];
           wantOrdinary = false;

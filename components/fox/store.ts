@@ -505,6 +505,7 @@ export function emptyDraft(): FoxIntakeDraft {
     coverWageGapAsked: false,
     householdWagesAsked: false,
     otherK1LoanAsked: false,
+    returnPaperOtherK1: false,
     otherK1LoanAnswer: undefined,
     otherK1OnLoan: false,
     k1WhoChoice: undefined,
@@ -745,6 +746,7 @@ function normalize(value: unknown): FoxIntakeDraft {
         ? raw.pageOtherName.trim()
         : undefined,
     otherK1LoanAsked: Boolean(raw.otherK1LoanAsked),
+    returnPaperOtherK1: Boolean(raw.returnPaperOtherK1),
     otherK1LoanAnswer:
       raw.otherK1LoanAnswer === "yes" || raw.otherK1LoanAnswer === "no" || raw.otherK1LoanAnswer === "skip"
         ? raw.otherK1LoanAnswer

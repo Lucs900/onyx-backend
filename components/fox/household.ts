@@ -295,6 +295,12 @@ export function otherK1LoanAskCopy(draft?: FoxIntakeDraft): {
   text: string;
   actions?: FoxAction[];
 } {
+  if (draft?.returnPaperOtherK1) {
+    return {
+      text: OTHER_K1_LOAN_ASK,
+      actions: otherK1LoanAskActions(),
+    };
+  }
   if (draft?.k1WhoChoice && namedTwoK1Packet(draft)) {
     return k1WhoConfirmCopy(draft) ?? {
       text: OTHER_K1_LOAN_ASK,
@@ -344,6 +350,19 @@ export function k1WhoConfirmCopy(draft: FoxIntakeDraft): {
 }
 
 export function writeOtherK1Loan(draft: FoxIntakeDraft, onLoan: boolean): FoxIntakeDraft {
+  if (draft.returnPaperOtherK1) {
+    return {
+      ...draft,
+      returnPaperOtherK1: false,
+      otherK1LoanAsked: true,
+      otherK1LoanAnswer: onLoan ? "yes" : "no",
+      otherK1OnLoan: onLoan,
+      pendingProposal: null,
+      pendingConflict: null,
+      correcting: null,
+      correctingLine: null,
+    };
+  }
   if (onLoan) return proposeOtherK1Box1(draft);
   return {
     ...draft,
@@ -360,6 +379,7 @@ export function writeOtherK1Loan(draft: FoxIntakeDraft, onLoan: boolean): FoxInt
 export function skipOtherK1Loan(draft: FoxIntakeDraft): FoxIntakeDraft {
   return {
     ...draft,
+    returnPaperOtherK1: false,
     otherK1LoanAsked: true,
     otherK1LoanAnswer: "skip",
     k1WhoChoice: undefined,

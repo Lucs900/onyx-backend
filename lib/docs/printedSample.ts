@@ -749,11 +749,19 @@ function k1OrdinaryFromPrintedText(text: string): string {
 function k1PartnerNameFromPrintedText(text: string): string {
   const blob = String(text ?? "").replace(/\u00a0/g, " ");
   const labeled =
+    blob.match(
+      /shareholder'?s name, address, city, state(?:, and ZIP code)?\s+([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3})/i,
+    ) ||
     blob.match(/partner(?:'s)? name\s*:?\s*([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3})/i) ||
     blob.match(/F\s+Name[^\n]{0,120}\n\s*([A-Z][A-Za-z .'-]{4,48})\s*(?:\n|$)/i) ||
     blob.match(/name, (?:address, )?city, state[^\n]{0,80}\n\s*([A-Z][A-Za-z .'-]{4,48})\s*(?:\n|$)/i);
   const raw = String(labeled?.[1] ?? "").replace(/\s+/g, " ").trim();
-  if (!raw || /parass|partnership|instructions|address|schedule|ordinary|hancock|fremont/i.test(raw)) {
+  if (
+    !raw ||
+    /parass|partnership|instructions|address|schedule|ordinary|hancock|fremont|\bpart\b|information|identifying|corporation/i.test(
+      raw,
+    )
+  ) {
     return "";
   }
   const pctRaw = ownershipPercentFromPrintedText(blob);

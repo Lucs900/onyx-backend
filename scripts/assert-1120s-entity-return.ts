@@ -261,6 +261,12 @@ async function main() {
   const k1 = loudK1FromPrintedLines(FOUNDER_K1_PAGE);
   assert.ok(k1, "loud K-1 extract");
   assert.equal(k1?.fields.k1_ordinary_income, "26351");
+  const namedK1 = loudK1FromPrintedLines([
+    ...FOUNDER_K1_PAGE,
+    "Shareholder's name, address, city, state, and ZIP code SICHIV HO",
+  ]);
+  assert.equal(namedK1?.fields.k1_partner_name, "SICHIV HO");
+  assert.equal(loudK1FromPrintedLines(FOUNDER_K1_PAGE)?.fields.k1_partner_name, undefined);
   assert.equal(k1?.fields.ownership_percent, "50");
   assert.notEqual(k1?.fields.k1_ordinary_income, "52702");
   const k1Only = monthlyQualifyingFromExtract(seSketch(), "tax_return", {

@@ -1207,6 +1207,9 @@ export const RETURN_CARD_LINE_PREFIX = "return_card_line_";
 /** Open papers from the card notes. Not return rows and not income. */
 export const RETURN_PAPER_PREFIX = "return_paper_";
 
+/** One named K-1 Box 1 on an open 1120-S paper. Not income. Not a second row. */
+export const K1_BOX1_PERSON_FIELD = "k1_box1_person";
+
 function confirmedPrefixedLines(draft: FoxIntakeDraft, prefix: string): string[] {
   const facts = draft.facts ?? {};
   return Object.keys(facts)
@@ -1225,6 +1228,169 @@ export function returnCardLinesOnFile(draft: FoxIntakeDraft): string[] {
 
 export function returnPapersOnFile(draft: FoxIntakeDraft): string[] {
   return confirmedPrefixedLines(draft, RETURN_PAPER_PREFIX);
+}
+
+function compactPaperName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/** A person printed on a K-1. A heading, an entity, or a filename is not a person. */
+export function k1PersonName(raw: string, entity = ""): string {
+  const name = String(raw ?? "").replace(/\s+/g, " ").trim();
+  if (!name || /\d/.test(name)) return "";
+  const words = name.split(" ").filter(Boolean);
+  if (words.length < 2 || words.length > 4) return "";
+  if (!words.every((word) => /^[A-Za-z][A-Za-z.'-]*$/.test(word))) return "";
+  if (/inc|llc|corp|form|schedule|shareholder|ordinary|wage|heading|address|street/i.test(name)) {
+    return "";
+  }
+  const entityKey = compactPaperName(entity);
+  const nameKey = compactPaperName(name);
+  if (entityKey && (nameKey === entityKey || entityKey.includes(nameKey))) return "";
+  return name;
+}
+
+function paperIs1120sFor(paper: string, entity: string): boolean {
+  const body = paper.replace(/\s+/g, " ").trim();
+  const match = body.match(/^(.*?)\s+1120-S\.?$/i);
+  if (!match || !entity.trim()) return false;
+  return compactPaperName(match[1] ?? "") === compactPaperName(entity);
+}
+
+export type Open1120sPaper = {
+  entity: string;
+  person: string;
+  ordinary: string;
+  otherPerson: string;
+  otherOrdinary: string;
+};
+
+function box1PeopleFromMap(map?: ReaderMap | null): { entity: string; person: string; ordinary: string }[] {
+  const rows: { entity: string; person: string; ordinary: string }[] = [];
+  for (const line of map?.lines ?? []) {
+    if (line.kind !== "k1_box1") continue;
+    const label = String(line.label ?? "");
+    const splitAt = label.lastIndexOf(" · ");
+    if (splitAt < 0) continue;
+    const entity = label.slice(0, splitAt).replace(/\s+/g, " ").trim();
+    const ordinary = label.slice(splitAt + 3).replace(/[^\d.]/g, "");
+    const person = k1PersonName(line.value, entity);
+    if (!entity || !person || !ordinary) continue;
+    rows.push({ entity, person, ordinary });
+  }
+  return rows;
+}
+
+/**
+ * An open 1120-S paper this drop names.
+ * A reader map is the text layer: a heading, a filename, or a look field is not Box 1.
+ */
+export function open1120sPaper(
+  draft: FoxIntakeDraft,
+  fields: Record<string, string>,
+  map?: ReaderMap | null,
+): Open1120sPaper | null {
+  if (packetReadPhase(fields)) return null;
+  const papers = returnPapersOnFile(draft);
+  if (!papers.length) return null;
+  const kind = String(fields.return_kind ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  const fromMap = box1PeopleFromMap(map);
+  const fieldEntity = String(fields.entity_name ?? "").replace(/\s+/g, " ").trim();
+  const mapEntities = (map?.entities ?? []).map((item) => item.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const entity =
+    [...fromMap.map((row) => row.entity), ...mapEntities, fieldEntity].find((name) =>
+      papers.some((paper) => paperIs1120sFor(paper, name)),
+    ) ?? "";
+  if (!entity) return null;
+  const people = fromMap.filter(
+    (row) =>
+      compactPaperName(row.entity) === compactPaperName(entity) &&
+      papers.some((paper) => paperIs1120sFor(paper, row.entity)),
+  );
+  const form1120 = Boolean(map?.forms?.includes("1120s"));
+  const formK1 = Boolean(map?.forms?.includes("k1"));
+  const dropIs1120 =
+    kind === "1120s" ||
+    form1120 ||
+    people.length > 0 ||
+    (formK1 && mapEntities.some((name) => papers.some((paper) => paperIs1120sFor(paper, name))));
+  if (!dropIs1120) return null;
+  if (map) {
+    const first = people[0];
+    const second = people.find(
+      (row) => first && compactPaperName(row.person) !== compactPaperName(first.person),
+    );
+    return {
+      entity: first?.entity || entity,
+      person: first?.person ?? "",
+      ordinary: first?.ordinary ?? "",
+      otherPerson: second?.person ?? "",
+      otherOrdinary: second?.ordinary ?? "",
+    };
+  }
+  const ordinary = String(fields.k1_ordinary_income ?? "").replace(/[^\d.]/g, "");
+  const person = ordinary ? k1PersonName(String(fields.k1_partner_name ?? ""), entity) : "";
+  const otherOrdinary = String(fields.other_k1_ordinary_income ?? "").replace(/[^\d.]/g, "");
+  const otherPerson = k1PersonName(String(fields.other_k1_partner_name ?? ""), entity);
+  return {
+    entity,
+    person,
+    ordinary: person ? ordinary : "",
+    otherPerson,
+    otherOrdinary: otherPerson ? otherOrdinary : "",
+  };
+}
+
+export function k1Box1PersonProposal(held: Open1120sPaper): FactProposal {
+  return {
+    field: K1_BOX1_PERSON_FIELD,
+    value: held.person,
+    label: "K-1 Box 1",
+    kind: "computed",
+    extras: [
+      { field: "entity_name", value: held.entity, label: "entity" },
+      { field: "return_kind", value: "1120s", label: "return kind" },
+      ...(held.ordinary ? [{ field: "k1_ordinary_income", value: held.ordinary, label: "K-1 Box 1" }] : []),
+      ...(held.otherPerson
+        ? [{ field: "other_k1_partner_name", value: held.otherPerson, label: "other K-1" }]
+        : []),
+      ...(held.otherOrdinary
+        ? [{ field: "other_k1_ordinary_income", value: held.otherOrdinary, label: "other K-1 Box 1" }]
+        : []),
+    ],
+  };
+}
+
+export function k1Box1PersonCopy(proposal: { value: string; extras?: { field: string; value: string }[] }): string {
+  const entity = proposal.extras?.find((item) => item.field === "entity_name")?.value?.trim() ?? "";
+  const name = proposal.value.trim();
+  const where = entity ? ` for ${entity}` : "";
+  return `Form 1120-S${where}. K-1 Box 1 is ${name}. Use this?`;
+}
+
+export function drop1120sReturnPaper(draft: FoxIntakeDraft, entity: string): FoxIntakeDraft {
+  const papers = returnPapersOnFile(draft);
+  const kept = papers.filter((paper) => !paperIs1120sFor(paper, entity));
+  if (kept.length === papers.length) return draft;
+  const facts = { ...(draft.facts ?? {}) };
+  for (const key of Object.keys(facts)) {
+    if (key.startsWith(RETURN_PAPER_PREFIX)) delete facts[key];
+  }
+  const now = new Date().toISOString();
+  kept.forEach((paper, index) => {
+    const field = `${RETURN_PAPER_PREFIX}${index}`;
+    facts[field] = {
+      field,
+      value: paper,
+      source: "document",
+      confirmed: true,
+      confirmedAt: now,
+    };
+  });
+  return { ...draft, facts };
 }
 
 export function lockTaxReturnPageReadFields(
@@ -2231,6 +2397,8 @@ export function applyExtractedFields(
   const pageReadReturn = looksLikeTaxReturnPageReadFields(fields);
   const holdFederalReturn =
     (looksLikeFederalReturnFields(fields) || pageReadReturn) && !transcriptReturn && !packetContinue;
+  const heldPaper = open1120sPaper(draft, fields, input.readerMap);
+  if (heldPaper) fields = {};
   for (const field of EXTRACT_SCHEMA_KEYS[extractClass]) {
     const value = fields[field];
     if (!value) continue;
@@ -2287,6 +2455,23 @@ export function applyExtractedFields(
     /** Grok 1040 page-read name is not an ID write. Government ID stays on Still useful. */
     if (extractClass === "tax_return" && field === "full_name") continue;
     if (extractClass === "tax_return" && (field === "k1_partner_name" || field === "other_k1_partner_name")) continue;
+    if (
+      heldPaper &&
+      (field === "officer_compensation" ||
+        field === "entity_name" ||
+        field === "gross_receipts" ||
+        field === "k1_ordinary_income" ||
+        field === "other_k1_ordinary_income" ||
+        field === "other_k1_ownership_percent" ||
+        field === "entity_ordinary_income" ||
+        field === "entity_taxable_income" ||
+        field === "ownership_percent" ||
+        field === "wages" ||
+        field === "medicare_wages" ||
+        field === "box5")
+    ) {
+      continue;
+    }
     if (extractClass === "government_id" && field === "present_address") {
       idAddress = value;
       continue;
@@ -2542,6 +2727,18 @@ export function applyExtractedFields(
         );
         conflict = next.pendingConflict ?? conflict;
       }
+    }
+  } else if (heldPaper) {
+    if (heldPaper.person) {
+      next = {
+        ...next,
+        pendingProposal: k1Box1PersonProposal(heldPaper),
+        pendingConflict: null,
+      };
+      conflict = null;
+    } else {
+      next = { ...next, pendingProposal: null, pendingConflict: null };
+      conflict = null;
     }
   } else if (!coverReturn || shouldProposeCoverLineIncome(draft, fields, computed)) {
     next = applyQualifyingIncomeFromExtract(
@@ -2961,7 +3158,7 @@ export function applyExtractedFields(
   ) {
     quietLines.push(EMPLOYER_MISMATCH_LINE);
   }
-  if (extractClass === "tax_return") {
+  if (extractClass === "tax_return" && !heldPaper) {
     next = holdTaxCashflowsFromExtract(next, fields);
     next = attachIncomeLedgerFromExtract(next, fields);
     next = holdPendingBusinessStart(next, fields);
@@ -2981,7 +3178,7 @@ export function applyExtractedFields(
       taxReturnPacketRead: "done",
     };
   }
-  if (!next.pendingProposal && !next.pendingConflict && extractClass === "tax_return") {
+  if (!next.pendingProposal && !next.pendingConflict && extractClass === "tax_return" && !heldPaper) {
     if (hasLockedSuggestion("w2", fields)) {
       next = maybeProposeWageExtract(next, fields, "w2");
     }
@@ -3022,8 +3219,8 @@ export function applyExtractedFields(
     );
     conflict = next.pendingConflict ?? conflict;
   }
-  if (!coverReturn && !transcriptReturn) next = maybeProposeQualifyingFromTaxFile(next);
-  if (!next.pendingProposal && !next.pendingConflict && !conflict) {
+  if (!coverReturn && !transcriptReturn && !heldPaper) next = maybeProposeQualifyingFromTaxFile(next);
+  if (!next.pendingProposal && !next.pendingConflict && !conflict && !heldPaper) {
     next = maybeProposeHunt(next, extractClass, fields);
   }
   if (
