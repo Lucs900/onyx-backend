@@ -133,7 +133,7 @@ function formFromBlob(blob: string): ReaderForm[] {
 }
 
 const FORM_LABEL_WORD =
-  /^(?:filing|status|digital|assets|asset|standard|deduction|deductions|qualified|taxable|tax|credits|credit|payments|payment|refund|amount|owe|owed|designee|preparer|social|security|adjusted|gross|earned|child|additional|opportunity|recovery|rebate|virtual|currency|foreign|accounts|account|presidential|election|identity|protection|occupation|dependents|dependent|spouse|married|single|jointly|separately|household|qualifying|widow|wages|salaries|salary|tips|employee|employees|total|income|interest|dividends|dividend|pension|annuity|capital|gain|loss|losses|business|profit|supplemental|ordinary|passive|nonpassive|proprietor|partner|partnership|shareholder|corporation|department|treasury|internal|revenue|service|yes|no|attach|instructions|instruction|caution|address|identification|employer|rents|royalties|royalty|depreciation|expenses|expense|mortgage|receipts|sales|inventory|other)$/i;
+  /^(?:filing|status|digital|assets|asset|standard|deduction|deductions|qualified|taxable|tax|credits|credit|payments|payment|refund|amount|owe|owed|designee|preparer|social|security|adjusted|gross|earned|child|additional|opportunity|recovery|rebate|virtual|currency|foreign|accounts|account|presidential|election|identity|protection|occupation|dependents|dependent|spouse|married|single|jointly|separately|household|qualifying|widow|wages|salaries|salary|tips|employee|employees|total|income|interest|dividends|dividend|pension|annuity|capital|gain|loss|losses|business|profit|supplemental|ordinary|passive|nonpassive|proprietor|partner|partnership|shareholder|corporation|department|treasury|internal|revenue|service|yes|no|attach|instructions|instruction|caution|address|identification|employer|rents|royalties|royalty|depreciation|expenses|expense|mortgage|receipts|sales|inventory|other|due|date|federal|fee|summary|declaration|signature|electronic|funds|withdrawal|consent|eligibility|certification|document|retention|amortization|principal|residence|penalty|relationship|method|part|first|last|name|ero|short)$/i;
 
 function isFormLabelName(line: string) {
   const words = line
@@ -158,6 +158,7 @@ function looksLikePersonName(line: string) {
   if (/\$|\d{3,}|form|schedule|return|california wages|shareholder|corporation|inc\.?$|llc|basis|authorization/i.test(t)) {
     return false;
   }
+  if (/\bE\.A\.?\b|\bC\.P\.A\.?\b/i.test(t)) return false;
   if (junkEmployerName(t)) return false;
   return /^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3}$/.test(t);
 }
@@ -300,7 +301,11 @@ function scheduleHeading(line: string): "c" | "e" | "k1" | "other" | null {
   const head = t.slice(0, 80);
   if (/^\s*schedule\s+c\b/i.test(head) && !/\b(attach|see|instruction|line)\b/i.test(head)) return "c";
   if (/^\s*schedule\s+e\b/i.test(head) || /^\s*supplemental income and loss\b/i.test(head)) return "e";
-  if (/^\s*schedule\s+k-?1\b/i.test(head)) return "k1";
+  if (/^\s*schedule\s+k-?1\b/i.test(head)) {
+    // A line-42 cross reference is not the K-1 form. Leave the schedule that was open.
+    if (/\bsee\s+instructions\b/i.test(head) || /\bbox\s+\d+/i.test(head)) return "other";
+    return "k1";
+  }
   if (t.length > 96) return null;
   if (/^\s*(?:schedule\s+[a-z0-9]|form\s+\d{3,4})\b/i.test(head)) return "other";
   return null;
@@ -353,6 +358,9 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   let emittedE = false;
   let eRole = "";
   let eEin = "";
+  let passiveIncomeColumn = false;
+  const partRows = new Map<string, { entity: string; ein: string; code: "P" | "S" | "" }>();
+  const partEmitted = new Set<string>();
   let pendingK1 = "";
   let k1Role = "";
   let k1Ein = "";
@@ -383,6 +391,9 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       emittedE = false;
       eRole = "";
       eEin = "";
+      passiveIncomeColumn = false;
+      partRows.clear();
+      partEmitted.clear();
     }
     if (next === "k1") {
       pendingK1 = "";
@@ -408,8 +419,10 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
 
     if (block === "c") {
       budget -= 1;
-      if (!isFormChromeName(line) && looksLikePersonName(line) && !/\bschedule\s+c\b/i.test(line)) {
-        out.push({ kind: "schedule_c", value: line.replace(/\s+/g, " ").trim(), label: "Schedule C" });
+      // The proprietor row prints the SSN on the same baseline. The name is the row.
+      const proprietor = line.replace(/\b\d{3}-\d{2}-\d{4}\b/g, " ").replace(/\s+/g, " ").trim();
+      if (!isFormChromeName(proprietor) && looksLikePersonName(proprietor) && !/\bschedule\s+c\b/i.test(proprietor)) {
+        out.push({ kind: "schedule_c", value: proprietor, label: "Schedule C" });
         block = null;
       } else if (budget <= 0) {
         block = null;
@@ -418,6 +431,35 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
     }
 
     if (block === "e") {
+      if (/\(h\)\s*passive income/i.test(line)) passiveIncomeColumn = true;
+      const part = line.match(/^([A-D])\s+(\S.*)$/i);
+      if (part) {
+        const letter = part[1]!.toUpperCase();
+        const rest = part[2]!.replace(/\s+/g, " ").trim();
+        const rowEin = rest.match(/\b(\d{2}-\d{7})\b/)?.[1] ?? "";
+        const entity = looksLikeEntity(rest) ? entityFromLine(rest) : "";
+        const codeToken = rest.match(/(?:^|\s)([PS])(?:\s|$)/i)?.[1]?.toUpperCase() ?? "";
+        const code = codeToken === "P" || codeToken === "S" ? codeToken : "";
+        const amounts = businessMoneyTokens(rest).filter((amount) => !isEinBody(amount, rowEin || eEin));
+        if (entity && !amounts.length) {
+          partRows.set(letter, { entity, ein: rowEin, code });
+          continue;
+        }
+        const stored = partRows.get(letter);
+        if (stored && !entity && amounts.length === 1 && !partEmitted.has(letter)) {
+          partEmitted.add(letter);
+          const amount = amounts[0]!;
+          if (stored.code === "S") {
+            const label = [stored.entity, "S corp", stored.ein ? `EIN ${stored.ein}` : ""].filter(Boolean).join(" · ");
+            out.push({ kind: "k1", value: amount, label });
+          } else {
+            const role = [stored.code === "P" ? "partnership" : "", passiveIncomeColumn ? "passive" : ""]
+              .filter(Boolean);
+            out.push({ kind: "schedule_e", value: amount, label: [stored.entity, ...role].join(" · ") });
+          }
+          continue;
+        }
+      }
       if (/^p$/i.test(line.trim())) eRole = eRole || "passive";
       if (/\bpartnership\b/i.test(line)) eRole = eRole || "partnership";
       const ein = line.match(/\b(\d{2}-\d{7})\b/);

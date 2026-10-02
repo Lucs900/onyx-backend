@@ -13,6 +13,7 @@ import {
   fieldsOnReaderMap,
   paystubExtractOpens,
   readerBusinessLines,
+  readerBusinessSpeech,
   readerMapFromLook,
   readerMapFromPrintedLines,
   readerMapNeverOpensStub,
@@ -186,6 +187,33 @@ const HEADING_AND_WAGE = [
   "S corporation",
   "EIN 92-3033949",
   "Wages, salaries, tips, etc. Attach Form(s) W-2 8,919",
+];
+
+/** Grouped pdf.js rows. The amount is a later letter line, not the EIN on the name line. */
+const LETTER_ROWS = [
+  "SCHEDULE C Profit or Loss From Business OMB No. 1545-0074",
+  "Name of proprietor Social security number (SSN)",
+  "VOUCH EIM SOY 617-55-6419",
+  "DONUT SHOP 722511",
+  "VOUCH EIM SOY",
+  "SCHEDULE E Supplemental Income and Loss OMB No. 1545-0074",
+  "Schedule E (Form 1040) 2024 Attachment Sequence No. 13 Page 2",
+  "A L&H VENTURES LLC P 88-2563436",
+  "B HO & SOY INC S 92-3033949 X",
+  "C HO & SOY INC S 92-3033949 X",
+  "(g) Passive loss allowed (h) Passive income (i) Nonpassive loss allowed (j) Section 179 (k) Nonpassive",
+  "A 60,343.",
+  "B 26,351.",
+  "C 26,351.",
+  "29 a Totals. . . . . . . . . . . . . . . . 113,045.",
+  "Schedule K-1 (Form 1041), box 14, code F. See instructions. . . . . . . . . . . . . . . . . . . 42",
+  "Form 7203 S Corporation Shareholder Stock and OMB No. 1545-2302",
+  "HO & SOY INC 92-3033949",
+  "3a Ordinary business income (enter losses in Part III) 3a 26,351.",
+  "Form 8582",
+  "L&H VENTURES LLC 60,343. 60,343.",
+  "HO & SOY INC 26,351. 26,351.",
+  "HO & SOY INC 26,351. 26,351.",
 ];
 
 function pdfFromContentStreams(streams: string[]) {
@@ -1042,6 +1070,17 @@ async function main() {
   assert.equal(readerWageLine(headingMap), null, "a collapsed wages label is not a wage to offer");
   assert.equal(readerBusinessLines(headingMap).length, 0);
   assert.equal(readerMapOpensReturnCard(headingMap), false, "entity plus wages must not open Use this");
+  const letterMap = readerMapFromPrintedLines(LETTER_ROWS);
+  const letterSpoken = readerBusinessLines(letterMap).map((line) => readerBusinessSpeech(line));
+  assert.deepEqual(letterSpoken, [
+    "Schedule C under VOUCH EIM SOY",
+    "Schedule E · L&H VENTURES LLC · partnership · passive · $60,343",
+    "HO & SOY INC · S corp · EIN 92-3033949 · $26,351",
+    "HO & SOY INC · S corp · EIN 92-3033949 · $26,351",
+  ]);
+  assert.equal(readerWageLine(letterMap), null);
+  assert.equal(readerMapOpensReturnCard(letterMap), true);
+  assert.ok(letterSpoken.every((line) => !/2,563,436|3,033,949|8,919|113,045/.test(line)));
   const headingAsked = applyExtractedFields(emptyDraft(), {
     extractClass: "tax_return",
     confidence: 0.94,
