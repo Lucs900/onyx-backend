@@ -251,6 +251,7 @@ import {
   transcriptSpeakKey,
   transcriptFollowUpAsk,
   transcriptOfferDone,
+  PACKET_WAGES_UNREAD_LINE,
   withTranscriptSpoken,
   matchingCoverLineOnFile,
   sameThinCoverRepeat,
@@ -1518,6 +1519,20 @@ export function AlwaysOnFox({
         if (scheduleEAsk) {
           return applyFoxAsk(next, scheduleEAsk);
         }
+        const liveAfterPacket = getFoxDraft();
+        if (
+          (detail.quietLines ?? []).includes(PACKET_WAGES_UNREAD_LINE) &&
+          !detail.conflict &&
+          !liveAfterPacket.pendingProposal &&
+          !liveAfterPacket.pendingConflict &&
+          !liveAfterPacket.awaitingPayFrequency &&
+          !liveAfterPacket.awaitingBothMonthlyReason &&
+          !liveAfterPacket.awaitingRaiseWhen &&
+          !liveAfterPacket.awaitingRaiseYtdFar
+        ) {
+          const withoutWage = next.filter((message) => message.text !== PACKET_WAGES_UNREAD_LINE);
+          return applyFoxAsk(withoutWage, { text: PACKET_WAGES_UNREAD_LINE });
+        }
         if (detail.conflict && !conflictAlreadySpoken(getFoxDraft(), detail.conflict)) {
           next.push(
             foxAskMessage({
@@ -1855,6 +1870,9 @@ export function AlwaysOnFox({
         return painted;
       }
       if (lastFox && shouldHoldDocInviteForOpenUseThis(lastFox.text, lastFox.actions, ask.text)) {
+        return painted;
+      }
+      if (lastFox?.text.trim() === PACKET_WAGES_UNREAD_LINE) {
         return painted;
       }
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;

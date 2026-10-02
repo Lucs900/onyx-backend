@@ -174,6 +174,7 @@ import {
   taxReturnPacketSettled,
   asksWhatElseOnReturn,
   PACKET_READING_LINE,
+  PACKET_WAGES_UNREAD_LINE,
   PACKET_NO_K1_C_LINE,
   SCHEDULE_E_RENTS_UNREAD_LINE,
   returnCardLinesOnFile,
@@ -3262,6 +3263,19 @@ function documentInviteActions(draft: FoxIntakeDraft): FoxAction[] {
   return docInviteActions();
 }
 
+/**
+ * Unread Form 1040 wages stays the last line. The next ask on a guest file is
+ * the account offer, so this line keeps the doc chips already used on a last
+ * line: Skip, then Upload this, then Looks right.
+ */
+export function packetWagesUnreadActions(): FoxAction[] {
+  const invite = docInviteActions();
+  const skip = invite.find((action) => action.label === "Skip");
+  const upload = invite.find((action) => action.label === "Upload this");
+  const looks = looksRightAskActions().find((action) => action.label === "Looks right");
+  return [skip, upload, looks].filter((action): action is FoxAction => Boolean(action));
+}
+
 function openLooksRightFinish(draft: FoxIntakeDraft) {
   const nextDraft = applyLooksRightMotion(draft);
   if (namedLossWritten(nextDraft)) {
@@ -4392,6 +4406,9 @@ export function deskStripActions(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxAction[] {
+  if (messages[messages.length - 1]?.text?.trim() === PACKET_WAGES_UNREAD_LINE) {
+    return packetWagesUnreadActions();
+  }
   const computed = deskStripActionsComputed(messages, draft);
   if (!hasLinkedAccount(draft)) return computed;
   const live = computed.filter((item) => !isLiveCreateAccountAction(item));

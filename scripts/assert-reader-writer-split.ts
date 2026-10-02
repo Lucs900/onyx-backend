@@ -24,6 +24,7 @@ import {
   docsInDisplayLabels,
   federalReturnConfirmCopy,
   PACKET_READING_LINE,
+  PACKET_WAGES_UNREAD_LINE,
   returnCardLinesOnFile,
   hasLockedSuggestion,
   looksLikePaystubFields,
@@ -33,7 +34,7 @@ import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument, startO
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { classifyAndExtract } from "../lib/docs/extract";
 import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
-import { docReactionAsk, nextFoxAsk, previewFacts, statusCopy, workspacePrompt } from "../components/fox/workspace";
+import { deskStripActions, docReactionAsk, nextFoxAsk, previewFacts, statusCopy, workspacePrompt } from "../components/fox/workspace";
 import { waitingOnCopy } from "../components/fox/motion";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 import { INCOME_BUBBLES } from "../components/fox/types";
@@ -1204,6 +1205,23 @@ async function main() {
     "the pad has no gross-receipts line",
   );
   assert.doesNotMatch(nextFoxAsk(packetAfterCard.draft).text, /a month|suggesting \$/i);
+  assert.ok(
+    packetAfterCard.quietLines.includes(PACKET_WAGES_UNREAD_LINE),
+    "unread Form 1040 wages is still the line after this card",
+  );
+  assert.deepEqual(
+    deskStripActions(
+      [
+        { id: "card", role: "fox", text: letterCard },
+        { id: "use", role: "client", text: "Use this" },
+        { id: "wages", role: "fox", text: PACKET_WAGES_UNREAD_LINE },
+      ],
+      packetAfterCard.draft,
+    ).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+    "the wage-miss line keeps Skip, Upload this, and Looks right",
+  );
+  assert.deepEqual(returnCardLinesOnFile(packetAfterCard.draft), writtenLines);
   const headingAsked = applyExtractedFields(emptyDraft(), {
     extractClass: "tax_return",
     confidence: 0.94,
