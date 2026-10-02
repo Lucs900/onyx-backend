@@ -2916,6 +2916,25 @@ export function sameBusinessIntakeAsk(
   return docReactionAsk(draft, extractClass) ?? workspacePromptCopy("confirm-proposal", draft);
 }
 
+/**
+ * "Reading the rest of the return." is status. The chips are the ones the
+ * next ask already owns once that hold is not covering them.
+ */
+function packetReadingAsk(draft: FoxIntakeDraft): {
+  text: string;
+  followUp?: string;
+  actions?: FoxAction[];
+} {
+  const released = { ...draft, taxReturnPacketRead: undefined };
+  if (taxReturnPacketHoldAsk(released) || workspacePrompt(released) === "packet-read") {
+    return { text: PACKET_READING_LINE };
+  }
+  const under = nextFoxAsk(released);
+  return under.actions?.length
+    ? { text: PACKET_READING_LINE, actions: under.actions }
+    : { text: PACKET_READING_LINE };
+}
+
 export function docReactionAsk(
   draft: FoxIntakeDraft,
   extractClass?: ReturnType<typeof lastExtractedClass>,
@@ -2956,7 +2975,7 @@ export function docReactionAsk(
   if (draft.awaitingPayFrequency) return payFrequencyAsk();
   if (draft.awaitingBothMonthlyReason) return bothMonthlyReasonAsk(draft);
   if (draft.awaitingCoverWageGap) return coverWageGapAsk();
-  if (taxReturnPacketHoldAsk(draft)) return { text: PACKET_READING_LINE };
+  if (taxReturnPacketHoldAsk(draft)) return packetReadingAsk(draft);
   if (taxReturnPacketCloseAskOpen(draft)) {
     return { text: PACKET_NO_K1_C_LINE, actions: finishLineActions(draft) };
   }
@@ -4147,6 +4166,7 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   facts?: ReturnType<typeof workspacePromptCopy>["facts"];
   actions?: FoxAction[];
 } {
+  if (taxReturnPacketHoldAsk(draft)) return packetReadingAsk(draft);
   if (
     firstAccountOfferOpen(draft) &&
     !(draft.pendingProposal && shouldSpeakPendingConfirm(draft))
@@ -5587,9 +5607,7 @@ function workspaceAskCopy(
       };
     }
   }
-  if (prompt === "packet-read") {
-    return { text: PACKET_READING_LINE };
-  }
+  if (prompt === "packet-read") return packetReadingAsk(draft);
   if (prompt === "schedule-e-unread") {
     return {
       text: SCHEDULE_E_RENTS_UNREAD_LINE,

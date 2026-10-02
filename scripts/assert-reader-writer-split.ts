@@ -23,6 +23,7 @@ import {
   applyExtractedFields,
   docsInDisplayLabels,
   federalReturnConfirmCopy,
+  PACKET_READING_LINE,
   returnCardLinesOnFile,
   hasLockedSuggestion,
   looksLikePaystubFields,
@@ -1126,7 +1127,12 @@ async function main() {
   );
   const letterUsed = resolveProposal(letterWrite.draft, "accept");
   const writtenLines = returnCardLinesOnFile(letterUsed);
-  assert.equal(`${writtenLines.join(" ")} Use this?`, letterCard, "Use this writes the lines the card spoke");
+  assert.match(letterCard, /\nUse this\?$/, "the card still ends on Use this?");
+  assert.deepEqual(
+    letterCard.replace(/\nUse this\?$/, "").split("\n"),
+    writtenLines,
+    "the card speaks each written line as its own row",
+  );
   assert.equal(
     writtenLines.filter((line) => line === "HO & SOY INC · S corp · $26,351.").length,
     2,
@@ -1143,6 +1149,25 @@ async function main() {
   assert.doesNotMatch(paintedText, /\bown(?:s|ed|ership)?\b/i);
   assert.ok(!painted.some((fact) => fact.id === "qualifying" || fact.id === "income"));
   assert.ok(!docsInDisplayLabels(letterUsed).includes("Paystubs in"));
+  const readingDraft = {
+    ...letterUsed,
+    path: "acr" as const,
+    documents: letterUsed.documents.map((doc) => ({
+      ...doc,
+      extractClass: "tax_return" as const,
+      bytesRef: doc.bytesRef || "packet-bytes",
+    })),
+  };
+  const readingAsk = nextFoxAsk(readingDraft);
+  const underReading = nextFoxAsk({ ...readingDraft, taxReturnPacketRead: undefined });
+  assert.equal(readingAsk.text, PACKET_READING_LINE, "the reading line stays the status sentence");
+  assert.deepEqual(
+    (readingAsk.actions ?? []).map((item) => item.label),
+    (underReading.actions ?? []).map((item) => item.label),
+    "the reading line keeps the chips that already belong under it",
+  );
+  assert.ok((readingAsk.actions ?? []).length > 0, "the reading line is not bare");
+  assert.equal(readingDraft.incomeType.value ?? "", "");
   const headingAsked = applyExtractedFields(emptyDraft(), {
     extractClass: "tax_return",
     confidence: 0.94,

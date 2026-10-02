@@ -843,6 +843,11 @@ function FoxThread({
         const tone = current ? " is-current" : " is-prior";
         const canEdit = message.role === "client" && Boolean(message.edit) && Boolean(onEdit);
         const speech = historyBubbleSpeech(message.text);
+        const returnCardRows =
+          /\n/.test(message.text) && /Use this\?\s*$/.test(message.text);
+        const speechRows = returnCardRows
+          ? speech.split("\n").map((row) => row.trim()).filter(Boolean)
+          : [speech];
         const followUp = message.followUp ? historyBubbleSpeech(message.followUp) : "";
         return (
           <article
@@ -862,7 +867,9 @@ function FoxThread({
                 : undefined
             }
           >
-            <p>{speech}</p>
+            {speechRows.map((row, rowIndex) => (
+              <p key={`${message.id}-row-${rowIndex}`}>{row}</p>
+            ))}
             {followUp ? <p>{followUp}</p> : null}
             {canEdit ? (
               <button

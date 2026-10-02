@@ -1174,6 +1174,8 @@ export function proposalAskCopy(proposal: FactProposal) {
     });
   }
   if (proposal.field === "tax_year") {
+    const sentences = returnCardSentences(proposal);
+    if (sentences.length) return `${sentences.join("\n")}\nUse this?`;
     const fields = Object.fromEntries([
       [proposal.field, proposal.value],
       ...(proposal.extras ?? [])
