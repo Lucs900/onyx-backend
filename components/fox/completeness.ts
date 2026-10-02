@@ -35,6 +35,8 @@ import {
   remainderProposalWrites,
   federalReturnConfirmCopy,
   RETURN_CARD_LINE_PREFIX,
+  RETURN_PAPER_PREFIX,
+  returnCardOpenPapers,
   returnCardBackNotes,
   returnCardSentences,
   sameThinCoverRepeat,
@@ -1860,11 +1862,14 @@ export function resolveProposal(
     if (sentences.length) {
       const kept = { ...(next.facts ?? {}) };
       for (const key of Object.keys(kept)) {
-        if (key.startsWith(RETURN_CARD_LINE_PREFIX)) delete kept[key];
+        if (key.startsWith(RETURN_CARD_LINE_PREFIX) || key.startsWith(RETURN_PAPER_PREFIX)) delete kept[key];
       }
       next = { ...next, facts: kept };
       sentences.forEach((sentence, index) => {
         next = writeConfirmedFact(next, `${RETURN_CARD_LINE_PREFIX}${index}`, sentence, source);
+      });
+      returnCardOpenPapers(proposal).forEach((paper, index) => {
+        next = writeConfirmedFact(next, `${RETURN_PAPER_PREFIX}${index}`, paper, source);
       });
       next = dropUnspokenTaxCashflows(next);
     }

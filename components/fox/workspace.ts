@@ -178,6 +178,7 @@ import {
   PACKET_NO_K1_C_LINE,
   SCHEDULE_E_RENTS_UNREAD_LINE,
   returnCardLinesOnFile,
+  returnPapersOnFile,
   taxReturnStructureValue,
   canSpeakDocStamp,
   transcriptSpeakKey,
@@ -11365,6 +11366,13 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
       facts.push({
         id: index === 0 ? "tax-return" : `return-line-${index}`,
         label: "Return",
+        value: line,
+      });
+    });
+    returnPapersOnFile(draft).forEach((line, index) => {
+      facts.push({
+        id: `still-needed-${index}`,
+        label: "Still needed",
         value: line,
       });
     });

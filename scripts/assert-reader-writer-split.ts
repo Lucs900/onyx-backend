@@ -1150,8 +1150,12 @@ async function main() {
   assert.equal(returnCardLinesOnFile(letterSkip).length, 0, "Skip leaves the spoken lines off File");
   assert.equal(letterSkip.incomeType.value ?? "", "");
   assert.ok(
-    !previewFacts(letterSkip).some((fact) => /60,343|26,351|106,404|74,952|27,324|92-3033949/.test(fact.value)),
+    !previewFacts(letterSkip).some((fact) => /60,343|26,351|106,404|74,952|27,324|92-3033949|96,000|Still needed/.test(`${fact.label} ${fact.value}`)),
     "Skip leaves the pad empty of the return lines",
+  );
+  assert.ok(
+    !previewFacts(letterWrite.draft).some((fact) => fact.label === "Still needed" || /96,000/.test(fact.value)),
+    "the pad stays empty of the open papers until Use this",
   );
   const letterUsed = resolveProposal(letterWrite.draft, "accept");
   const writtenLines = returnCardLinesOnFile(letterUsed);
@@ -1190,8 +1194,25 @@ async function main() {
   for (const line of writtenLines) {
     assert.equal(painted.filter((fact) => fact.value === line).length, writtenLines.filter((item) => item === line).length);
   }
+  const returnPaint = painted.filter((fact) => fact.label === "Return").map((fact) => fact.value).join("\n");
+  assert.doesNotMatch(returnPaint, /92-3033949|8,919|2,563,436|3,033,949|96,000/);
+  assert.deepEqual(
+    painted.filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    [
+      "W-2s for the $96,000.",
+      "L&H VENTURES LLC. 1065.",
+      "HO & SOY INC. 1120-S.",
+    ],
+    "open papers sit on the pad, not as income",
+  );
+  assert.ok(!painted.some((fact) => fact.id === "income" || fact.id === "qualifying" || fact.label === "Income"));
+  assert.equal(letterUsed.facts?.wages, undefined, "the wage note is not a written income dollar");
+  assert.equal(letterUsed.facts?.household_wages, undefined);
+  assert.doesNotMatch(
+    painted.filter((fact) => fact.label === "Still needed").map((fact) => fact.value).join("\n"),
+    /Sichiv|Vouch|92-3033949|Partnership|S corp/,
+  );
   const paintedText = painted.map((fact) => fact.value).join("\n");
-  assert.doesNotMatch(paintedText, /92-3033949|8,919|2,563,436|3,033,949|96,000/);
   assert.doesNotMatch(paintedText, /\bown(?:s|ed|ership)?\b/i);
   assert.ok(!painted.some((fact) => fact.id === "qualifying" || fact.id === "income"));
   assert.ok(!docsInDisplayLabels(letterUsed).includes("Paystubs in"));
@@ -1264,6 +1285,16 @@ async function main() {
   assert.ok(!packetAfterCard.quietLines.includes(PACKET_WAGES_UNREAD_LINE));
   assert.equal(packetAfterCard.draft.facts?.wages, undefined);
   assert.equal(packetAfterCard.draft.facts?.household_wages, undefined);
+  assert.deepEqual(
+    previewFacts(packetAfterCard.draft)
+      .filter((fact) => fact.label === "Still needed")
+      .map((fact) => fact.value),
+    [
+      "W-2s for the $96,000.",
+      "L&H VENTURES LLC. 1065.",
+      "HO & SOY INC. 1120-S.",
+    ],
+  );
   assert.deepEqual(
     deskStripActions(freezeUsedFoxTurns(afterUseThread), { ...packetAfterCard.draft, path: "acr" }).map(
       (item) => item.label,

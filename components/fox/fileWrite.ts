@@ -1036,21 +1036,24 @@ export function returnCardSentences(proposal: FactProposal): string[] {
     .map((sentence) => (sentence.endsWith(".") ? sentence : `${sentence}.`));
 }
 
-/** Back notes on the same card. Not rows, not income, not a later line. */
-export function returnCardBackNotes(proposal: FactProposal): string[] {
+type ReturnCardNeeds = {
+  wage: number;
+  partnerships: string[];
+  scorps: { name: string; count: number }[];
+};
+
+/** Wage note and entity papers already on the card. Not income. */
+function returnCardNeeds(proposal: FactProposal): ReturnCardNeeds | null {
   const rows = returnCardSentences(proposal);
-  if (!rows.length) return [];
-  const notes: string[] = [];
+  if (!rows.length) return null;
   const wage = Number(
     String((proposal.extras ?? []).find((item) => item.field === "return_note_wages")?.value ?? "").replace(
       /[^\d.]/g,
       "",
     ),
   );
-  if (Number.isFinite(wage) && wage > 0) {
-    notes.push(`Wages $${Math.round(wage).toLocaleString("en-US")}. W-2s still needed.`);
-  }
   const partnershipSeen = new Set<string>();
+  const partnerships: string[] = [];
   const scorp = new Map<string, { name: string; count: number; at: number }>();
   rows.forEach((row, index) => {
     const parts = row
@@ -1063,7 +1066,7 @@ export function returnCardBackNotes(proposal: FactProposal): string[] {
       const key = entity.toLowerCase();
       if (entity && !partnershipSeen.has(key)) {
         partnershipSeen.add(key);
-        notes.push(`${entity}. Partnership. 1065 still needed.`);
+        partnerships.push(entity);
       }
       return;
     }
@@ -1075,13 +1078,48 @@ export function returnCardBackNotes(proposal: FactProposal): string[] {
     if (prior) prior.count += 1;
     else scorp.set(key, { name: entity, count: 1, at: index });
   });
-  const scorpNotes = Array.from(scorp.values())
-    .sort((left, right) => left.at - right.at)
-    .map((item) => {
-      const stay = item.count > 1 ? " Two lines stay." : "";
-      return `${item.name}. S corp.${stay} 1120-S still needed.`;
-    });
-  return [...notes, ...scorpNotes];
+  return {
+    wage: Number.isFinite(wage) && wage > 0 ? Math.round(wage) : 0,
+    partnerships,
+    scorps: Array.from(scorp.values())
+      .sort((left, right) => left.at - right.at)
+      .map((item) => ({ name: item.name, count: item.count })),
+  };
+}
+
+/** Back notes on the same card. Not rows, not income, not a later line. */
+export function returnCardBackNotes(proposal: FactProposal): string[] {
+  const needs = returnCardNeeds(proposal);
+  if (!needs) return [];
+  const notes: string[] = [];
+  if (needs.wage > 0) {
+    notes.push(`Wages $${needs.wage.toLocaleString("en-US")}. W-2s still needed.`);
+  }
+  for (const entity of needs.partnerships) {
+    notes.push(`${entity}. Partnership. 1065 still needed.`);
+  }
+  for (const item of needs.scorps) {
+    const stay = item.count > 1 ? " Two lines stay." : "";
+    notes.push(`${item.name}. S corp.${stay} 1120-S still needed.`);
+  }
+  return notes;
+}
+
+/** Open papers on the pad after Use this. Not income rows. Not a second Fox line. */
+export function returnCardOpenPapers(proposal: FactProposal): string[] {
+  const needs = returnCardNeeds(proposal);
+  if (!needs) return [];
+  const papers: string[] = [];
+  if (needs.wage > 0) {
+    papers.push(`W-2s for the $${needs.wage.toLocaleString("en-US")}.`);
+  }
+  for (const entity of needs.partnerships) {
+    papers.push(`${entity}. 1065.`);
+  }
+  for (const item of needs.scorps) {
+    papers.push(`${item.name}. 1120-S.`);
+  }
+  return papers;
 }
 
 export function looksLikeMortgageFields(
@@ -1166,16 +1204,27 @@ export const TAX_RETURN_NAME_FIELD = "tax_return_name";
 /** One spoken card sentence per key, so two identical K-1 lines both stay. */
 export const RETURN_CARD_LINE_PREFIX = "return_card_line_";
 
-export function returnCardLinesOnFile(draft: FoxIntakeDraft): string[] {
+/** Open papers from the card notes. Not return rows and not income. */
+export const RETURN_PAPER_PREFIX = "return_paper_";
+
+function confirmedPrefixedLines(draft: FoxIntakeDraft, prefix: string): string[] {
   const facts = draft.facts ?? {};
   return Object.keys(facts)
-    .filter((key) => /^return_card_line_\d+$/.test(key) && facts[key]?.confirmed)
-    .sort(
-      (left, right) =>
-        Number(left.slice(RETURN_CARD_LINE_PREFIX.length)) - Number(right.slice(RETURN_CARD_LINE_PREFIX.length)),
-    )
+    .filter((key) => {
+      if (!key.startsWith(prefix) || !facts[key]?.confirmed) return false;
+      return /^\d+$/.test(key.slice(prefix.length));
+    })
+    .sort((left, right) => Number(left.slice(prefix.length)) - Number(right.slice(prefix.length)))
     .map((key) => String(facts[key]?.value ?? "").trim())
     .filter(Boolean);
+}
+
+export function returnCardLinesOnFile(draft: FoxIntakeDraft): string[] {
+  return confirmedPrefixedLines(draft, RETURN_CARD_LINE_PREFIX);
+}
+
+export function returnPapersOnFile(draft: FoxIntakeDraft): string[] {
+  return confirmedPrefixedLines(draft, RETURN_PAPER_PREFIX);
 }
 
 export function lockTaxReturnPageReadFields(
