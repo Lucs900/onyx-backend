@@ -1149,6 +1149,9 @@ async function main() {
   );
   assert.equal(letterUsed.incomeType.value ?? "", "", "Use this does not set Income");
   assert.notEqual(letterUsed.incomeType.value, "both");
+  assert.equal(letterUsed.facts?.tax_cashflows, undefined, "Use this does not keep an off-card cashflow");
+  assert.equal(letterUsed.facts?.entity_name, undefined, "Use this does not store an entity the card did not speak as its own row");
+  assert.doesNotMatch(JSON.stringify(letterUsed.facts ?? {}), /ownership|92-3033949|88-2563436/);
   const painted = previewFacts(letterUsed);
   for (const line of writtenLines) {
     assert.equal(painted.filter((fact) => fact.value === line).length, writtenLines.filter((item) => item === line).length);

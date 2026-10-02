@@ -2414,20 +2414,38 @@ export function skipScheduleEUnread(draft: FoxIntakeDraft): FoxIntakeDraft {
   return { ...draft, scheduleECashUnread: false, scheduleECashAsked: true };
 }
 
+/** A year plus a column-letter entity is not a card row and not qualifying income. */
+export function cashflowBelongsOnFile(row: TaxYearCashflow | null): boolean {
+  if (!row) return false;
+  return Boolean(
+    row.schedule_e_rents_received ||
+      row.schedule_e_cash_expenses ||
+      row.schedule_e_property_address ||
+      row.schedule_e_part2_names ||
+      row.k1_ordinary_income ||
+      row.entity_ordinary_income,
+  );
+}
+
+/** Drop a cash-flow blob that is only an entity name. Spoken card rows stay. */
+export function dropUnspokenTaxCashflows(draft: FoxIntakeDraft): FoxIntakeDraft {
+  const rows = readTaxCashflows(draft);
+  const kept = rows.filter((row) => cashflowBelongsOnFile(row));
+  if (kept.length === rows.length) return draft;
+  if (!kept.length) {
+    const facts = { ...(draft.facts ?? {}) };
+    delete facts[TAX_CASHFLOWS_FIELD];
+    return { ...draft, facts };
+  }
+  return writeTaxCashflows(draft, kept);
+}
+
 export function holdTaxCashflowsFromExtract(
   draft: FoxIntakeDraft,
   fields: Record<string, string>,
 ): FoxIntakeDraft {
   const incoming = cashflowFromExtract(fields);
-  if (!incoming) return draft;
-  const hasScheduleE =
-    Boolean(incoming.schedule_e_rents_received) ||
-    Boolean(incoming.schedule_e_cash_expenses) ||
-    Boolean(incoming.schedule_e_property_address) ||
-    Boolean(incoming.schedule_e_part2_names);
-  if (!hasScheduleE && !incoming.k1_ordinary_income && !incoming.entity_ordinary_income) {
-    return draft;
-  }
+  if (!cashflowBelongsOnFile(incoming)) return draft;
   return writeTaxCashflows(draft, mergeTaxCashflows(readTaxCashflows(draft), incoming));
 }
 
@@ -2860,7 +2878,10 @@ export function applyQualifyingIncomeFromExtract(
   if (extractClass === "tax_return") {
     fields = lockParass1065LedgerFields(fields);
     next = parkWrittenRentalCash(next);
-    next = writeTaxCashflows(next, mergeTaxCashflows(readTaxCashflows(next), cashflowFromExtract(fields)));
+    const incoming = cashflowFromExtract(fields);
+    if (cashflowBelongsOnFile(incoming)) {
+      next = writeTaxCashflows(next, mergeTaxCashflows(readTaxCashflows(next), incoming));
+    }
     next = attachIncomeLedgerFromExtract(next, fields);
     if (confirmedWageQi(next)) return next;
   }

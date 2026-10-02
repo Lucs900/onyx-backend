@@ -56,6 +56,7 @@ import {
   SE_MONTHLY_FIELD,
   K1_MONTHLY_FIELD,
   writeEntityEmployment,
+  dropUnspokenTaxCashflows,
   decliningIncomeCaution,
   wageIncomeCaution,
   wageThreadOpen,
@@ -1858,6 +1859,7 @@ export function resolveProposal(
       sentences.forEach((sentence, index) => {
         next = writeConfirmedFact(next, `${RETURN_CARD_LINE_PREFIX}${index}`, sentence, source);
       });
+      next = dropUnspokenTaxCashflows(next);
     }
   }
   if (proposal.field === QUALIFYING_INCOME_FIELD) {
