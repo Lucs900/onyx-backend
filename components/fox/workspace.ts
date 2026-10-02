@@ -4386,6 +4386,21 @@ function stripStreetSuggest(actions: FoxAction[]): FoxAction[] {
   );
 }
 
+/** Back notes on a used return card. Not income, not a pad row, not a second line. */
+function spokenCardStillNeedsPaper(text?: string | null): boolean {
+  return /still needed/i.test(String(text ?? ""));
+}
+
+/** Empty, reading, or the Start-over account offer must not replace the card. */
+function nextAskLeavesReturnCard(ask: { text: string; actions?: FoxAction[] }): boolean {
+  const text = ask.text.trim();
+  if (!text || text === PACKET_READING_LINE || text === ACCOUNT_FIRST_OFFER) return true;
+  return (ask.actions ?? []).some(
+    (action) =>
+      action.label === "Create account" || action.label === "Log in" || action.label === "Not now",
+  );
+}
+
 /** Confirm-before-write lives on the File tool, not on a chat message. */
 export function writeConfirmActions(draft: FoxIntakeDraft): FoxAction[] {
   if (namedTwoK1WhoAskPending(draft)) return [];
@@ -4478,16 +4493,22 @@ function deskStripActionsComputed(
       !draft.pendingAddress;
     if (usedConfirm) {
       const next = nextFoxAsk(draft);
-      if (returnCardLinesOnFile(draft).length > 0) {
-        const accountChip = (next.actions ?? []).some(
-          (action) =>
-            action.label === "Create account" ||
-            action.label === "Log in" ||
-            action.label === "Not now",
-        );
-        if (!next.text.trim() || next.text.trim() === PACKET_READING_LINE || accountChip) return [];
+      if (returnCardLinesOnFile(draft).length > 0 && nextAskLeavesReturnCard(next)) {
+        if (spokenCardStillNeedsPaper(thread[live]?.text)) return packetWagesUnreadActions();
+        return [];
       }
       if ((next.actions ?? []).length) return stripStreetSuggest(next.actions ?? []);
+    }
+    if (
+      live >= 0 &&
+      returnCardLinesOnFile(draft).length > 0 &&
+      spokenCardStillNeedsPaper(thread[live]?.text) &&
+      !draft.pendingProposal &&
+      !draft.pendingConflict &&
+      !draft.pendingAddress &&
+      nextAskLeavesReturnCard(nextFoxAsk(draft))
+    ) {
+      return packetWagesUnreadActions();
     }
     return [];
   }

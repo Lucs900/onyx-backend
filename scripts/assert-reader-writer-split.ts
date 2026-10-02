@@ -36,6 +36,7 @@ import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { classifyAndExtract } from "../lib/docs/extract";
 import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
 import { deskStripActions, docReactionAsk, nextFoxAsk, previewFacts, statusCopy, workspacePrompt } from "../components/fox/workspace";
+import { freezeUsedFoxTurns, isReturnCardSpeech } from "../components/fox/liveCoupon";
 import { waitingOnCopy } from "../components/fox/motion";
 import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
 import { INCOME_BUBBLES } from "../components/fox/types";
@@ -1170,6 +1171,11 @@ async function main() {
     ["Use this", "Change"],
     "the card keeps Use this and Change",
   );
+  assert.deepEqual(
+    deskStripActions([{ id: "card", role: "fox", text: letterCard }], letterWrite.draft).map((item) => item.label),
+    ["Use this", "Change"],
+    "Skip, Upload this, and Looks right stay off the card before Use this",
+  );
   assert.equal(
     writtenLines.filter((line) => line === "HO & SOY INC · S corp · $26,351.").length,
     2,
@@ -1202,15 +1208,31 @@ async function main() {
   assert.notEqual(readingAsk.text, PACKET_READING_LINE, "the reading beat stays off this card");
   assert.equal(readingAsk.text, "");
   assert.deepEqual(readingAsk.actions ?? [], []);
+  const afterUseThread = [
+    { id: "card", role: "fox", text: letterCard },
+    { id: "use", role: "client", text: "Use this" },
+  ];
+  assert.deepEqual(
+    deskStripActions(afterUseThread, readingDraft).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+    "a paper still needed keeps Skip, Upload this, and Looks right on the last line",
+  );
   assert.ok(
-    !deskStripActions(
-      [
-        { id: "card", role: "fox", text: letterCard },
-        { id: "use", role: "client", text: "Use this" },
-      ],
-      readingDraft,
-    ).some((item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now"),
+    !deskStripActions(afterUseThread, readingDraft).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
     "Create account, Log in, and Not now stay off the composer after this card",
+  );
+  const frozenCard = freezeUsedFoxTurns(afterUseThread).find((message) => message.role === "fox");
+  assert.ok(frozenCard);
+  assert.equal(isReturnCardSpeech(frozenCard?.text), true, "the used card stays a row card");
+  assert.doesNotMatch(frozenCard?.text ?? "", /Use this\?/);
+  assert.ok(frozenCard?.text.includes("Wages $96,000. W-2s still needed."));
+  assert.ok(frozenCard?.text.includes("L&H VENTURES LLC. Partnership. 1065 still needed."));
+  assert.ok(frozenCard?.text.includes("HO & SOY INC. S corp. Two lines stay. 1120-S still needed."));
+  assert.deepEqual(
+    deskStripActions(freezeUsedFoxTurns(afterUseThread), readingDraft).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
   );
   assert.equal(readingDraft.incomeType.value ?? "", "");
   const packetAfterCard = applyExtractedFields(letterUsed, {
@@ -1242,21 +1264,15 @@ async function main() {
   assert.ok(!packetAfterCard.quietLines.includes(PACKET_WAGES_UNREAD_LINE));
   assert.equal(packetAfterCard.draft.facts?.wages, undefined);
   assert.equal(packetAfterCard.draft.facts?.household_wages, undefined);
+  assert.deepEqual(
+    deskStripActions(freezeUsedFoxTurns(afterUseThread), { ...packetAfterCard.draft, path: "acr" }).map(
+      (item) => item.label,
+    ),
+    ["Skip", "Upload this", "Looks right"],
+  );
   assert.ok(
-    !deskStripActions(
-      [
-        { id: "card", role: "fox", text: letterCard },
-        { id: "use", role: "client", text: "Use this" },
-      ],
-      { ...packetAfterCard.draft, path: "acr" },
-    ).some(
-      (item) =>
-        item.label === "Create account" ||
-        item.label === "Log in" ||
-        item.label === "Not now" ||
-        item.label === "Skip" ||
-        item.label === "Upload this" ||
-        item.label === "Looks right",
+    !deskStripActions(freezeUsedFoxTurns(afterUseThread), { ...packetAfterCard.draft, path: "acr" }).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
     ),
   );
   assert.deepEqual(returnCardLinesOnFile(packetAfterCard.draft), writtenLines);

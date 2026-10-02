@@ -799,6 +799,17 @@ export function inertUsedConfirmText(text?: string | null) {
     .trim();
 }
 
+/**
+ * A spoken return card stays one row per line after Use this? is stripped.
+ * The back notes stay on that card. They are not a second Fox line.
+ */
+export function isReturnCardSpeech(text?: string | null): boolean {
+  const raw = String(text ?? "");
+  if (!/\n/.test(raw)) return false;
+  if (/Use this\?\s*$/.test(raw)) return true;
+  return /still needed/i.test(raw);
+}
+
 /** After a chip is used, that Fox turn is inert text. Quick replies live only on the latest Fox line. */
 export function freezeUsedFoxTurns(messages: FoxMessage[]): FoxMessage[] {
   const sealed = withoutDuplicateHistoryInvite(

@@ -46,6 +46,7 @@ import {
   dropOnFileAddressLines,
   dropResolvedAddressConfirmChips,
   freezeUsedFoxTurns,
+  isReturnCardSpeech,
   historyBubbleSpeech,
   withoutDuplicateContractConfirm,
   withoutDuplicateTranscriptAsk,
@@ -556,6 +557,9 @@ function applyFoxAsk(
   },
 ): FoxMessage[] {
   const live = getFoxDraft();
+  if (returnCardHoldsAccountAsk(live, ask)) {
+    return freezeUsedFoxTurns(messages);
+  }
   if (
     isGovernmentIdInviteLine(ask.text) &&
     governmentIdReceivedOnDocs(live) &&
@@ -861,8 +865,7 @@ function FoxThread({
         const tone = current ? " is-current" : " is-prior";
         const canEdit = message.role === "client" && Boolean(message.edit) && Boolean(onEdit);
         const speech = historyBubbleSpeech(message.text);
-        const returnCardRows =
-          /\n/.test(message.text) && /Use this\?\s*$/.test(message.text);
+        const returnCardRows = isReturnCardSpeech(message.text);
         const speechRows = returnCardRows
           ? speech.split("\n").map((row) => row.trim()).filter(Boolean)
           : [speech];
