@@ -962,6 +962,7 @@ export function maybeProposeFederalReturn(
   const businesses = readerBusinessLines(readerMap);
   const entity = businesses.length ? "" : readerEntityName(readerMap);
   const wage = readerWageLine(readerMap);
+  const notedWages = String(readerMap?.line1z ?? "").replace(/[^\d.]/g, "");
   const mapName = (readerMap?.names ?? []).filter(Boolean).join(" and ").trim();
   const cardFields = {
     ...fields,
@@ -984,6 +985,12 @@ export function maybeProposeFederalReturn(
     if (wage.label && wage.label !== "wages") {
       extras.push({ field: "wage_line_label", value: wage.label, label: "wage line" });
     }
+  } else if (businesses.length && Number(notedWages) > 0) {
+    extras.push({
+      field: "return_note_wages",
+      value: String(Math.round(Number(notedWages))),
+      label: "wages",
+    });
   }
   if (status) extras.push({ field: "filing_status", value: status, label: "filing status" });
   const transcript = isTranscriptReturnFields(fields);
@@ -1027,6 +1034,54 @@ export function returnCardSentences(proposal: FactProposal): string[] {
   return [head, ...more]
     .filter(Boolean)
     .map((sentence) => (sentence.endsWith(".") ? sentence : `${sentence}.`));
+}
+
+/** Back notes on the same card. Not rows, not income, not a later line. */
+export function returnCardBackNotes(proposal: FactProposal): string[] {
+  const rows = returnCardSentences(proposal);
+  if (!rows.length) return [];
+  const notes: string[] = [];
+  const wage = Number(
+    String((proposal.extras ?? []).find((item) => item.field === "return_note_wages")?.value ?? "").replace(
+      /[^\d.]/g,
+      "",
+    ),
+  );
+  if (Number.isFinite(wage) && wage > 0) {
+    notes.push(`Wages $${Math.round(wage).toLocaleString("en-US")}. W-2s still needed.`);
+  }
+  const partnershipSeen = new Set<string>();
+  const scorp = new Map<string, { name: string; count: number; at: number }>();
+  rows.forEach((row, index) => {
+    const parts = row
+      .replace(/\.$/, "")
+      .split(" · ")
+      .map((bit) => bit.trim())
+      .filter(Boolean);
+    if (parts.some((bit) => /^partnership$/i.test(bit))) {
+      const entity = /^schedule e$/i.test(parts[0] ?? "") ? parts[1] ?? "" : parts[0] ?? "";
+      const key = entity.toLowerCase();
+      if (entity && !partnershipSeen.has(key)) {
+        partnershipSeen.add(key);
+        notes.push(`${entity}. Partnership. 1065 still needed.`);
+      }
+      return;
+    }
+    if (!parts.some((bit) => /^s corp$/i.test(bit))) return;
+    const entity = parts[0] ?? "";
+    const key = entity.toLowerCase();
+    if (!entity) return;
+    const prior = scorp.get(key);
+    if (prior) prior.count += 1;
+    else scorp.set(key, { name: entity, count: 1, at: index });
+  });
+  const scorpNotes = Array.from(scorp.values())
+    .sort((left, right) => left.at - right.at)
+    .map((item) => {
+      const stay = item.count > 1 ? " Two lines stay." : "";
+      return `${item.name}. S corp.${stay} 1120-S still needed.`;
+    });
+  return [...notes, ...scorpNotes];
 }
 
 export function looksLikeMortgageFields(
@@ -2897,7 +2952,6 @@ export function applyExtractedFields(
         : 0;
     if (!next.taxReturnPacketSpoken && !offeredWages && wagesOnCard > 0) {
       next = { ...next, taxReturnPacketSpoken: true };
-      quietLines.push(packetWagesOnReturnLine(wagesOnCard));
     } else if (!next.taxReturnPacketSpoken && !offeredWages && printedWages <= 0) {
       if (
         taxReturnWrittenOnFile(next) &&

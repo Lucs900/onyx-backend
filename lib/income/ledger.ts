@@ -523,6 +523,17 @@ export function hasRealIncomeLedgerDollars(fields?: Record<string, string> | nul
   return incomeLedgerRowsFromFields(fields ?? {}).length > 0;
 }
 
+/** Form 1040 line 1z after “Add lines 1a through 1h”. Not line 1y, not a filename. */
+export function form1040Line1zAmount(lines: readonly string[]): string {
+  const blob = lines.join("\n").replace(/\u00a0/g, " ");
+  if (/TAX RETURN TRANSCRIPT|FORM 1040 TAX RETURN TRANSCRIPT|ACCOUNT TRANSCRIPT/i.test(blob)) return "";
+  const wageMoney =
+    "(-?\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|-?\\$?\\s*\\d{3,}(?:\\.\\d+)?|\\(\\s*\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?\\s*\\))";
+  const raw = blob.match(new RegExp(`add lines 1a through 1h\\b[\\s\\S]{0,800}?\\b1z\\s+${wageMoney}`, "i"))?.[1];
+  const n = realLedgerMoney(raw);
+  return n != null && n > 0 ? String(n) : "";
+}
+
 /** Printed 1040 / packet lines → ledger fields. Never a transcript dump. */
 export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<string, string> {
   const blob = lines.join("\n").replace(/\u00a0/g, " ");
@@ -548,8 +559,9 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   const money = "(-?\\$?\\s*\\d[\\d,]*(?:\\.\\d+)?|\\(\\s*\\$?\\s*\\d[\\d,]*(?:\\.\\d+)?\\s*\\))";
   const wageMoney =
     "(-?\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|-?\\$?\\s*\\d{3,}(?:\\.\\d+)?|\\(\\s*\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?\\s*\\))";
+  const line1z = form1040Line1zAmount(lines);
   const wages =
-    blob.match(new RegExp(`add lines 1a through 1h\\b[\\s\\S]{0,800}?\\b1z\\s+${wageMoney}`, "i"))?.[1] ||
+    (line1z ? line1z : "") ||
     moneyNearLabel(blob, /1z\s+wages,?\s*salaries,?\s*tips/i) ||
     moneyNearLabel(blob, /1a\s+total amount from form\(s\)\s*w-?2/i) ||
     moneyNearLabel(blob, /1a\s+wages,?\s*salaries,?\s*tips/i) ||

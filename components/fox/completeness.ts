@@ -35,6 +35,7 @@ import {
   remainderProposalWrites,
   federalReturnConfirmCopy,
   RETURN_CARD_LINE_PREFIX,
+  returnCardBackNotes,
   returnCardSentences,
   sameThinCoverRepeat,
   valuesMatch,
@@ -1176,7 +1177,10 @@ export function proposalAskCopy(proposal: FactProposal) {
   }
   if (proposal.field === "tax_year") {
     const sentences = returnCardSentences(proposal);
-    if (sentences.length) return `${sentences.join("\n")}\nUse this?`;
+    if (sentences.length) {
+      const notes = returnCardBackNotes(proposal);
+      return `${[...sentences, ...notes].join("\n")}\nUse this?`;
+    }
     const fields = Object.fromEntries([
       [proposal.field, proposal.value],
       ...(proposal.extras ?? [])
@@ -1835,6 +1839,9 @@ export function resolveProposal(
       continue;
     }
     if (proposal.field === "tax_year" && extra.field === "return_line") {
+      continue;
+    }
+    if (proposal.field === "tax_year" && extra.field === "return_note_wages") {
       continue;
     }
     if (

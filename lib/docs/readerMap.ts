@@ -4,6 +4,7 @@
  */
 import { junkEmployerName } from "@/lib/docs/junkEmployer";
 import { classifyPageByFormHeader, type TaxFormClass } from "@/lib/docs/formHeader";
+import { form1040Line1zAmount } from "@/lib/income/ledger";
 
 export type ReaderForm =
   | "1040"
@@ -31,6 +32,8 @@ export type ReaderMap = {
   entities: string[];
   lines: ReaderLine[];
   missing: string[];
+  /** Form 1040 line 1z from the printed lines. Not an offered wage and not a row. */
+  line1z?: string;
 };
 
 export const NEVER_STUB_FORMS: readonly ReaderForm[] = ["1040", "8879", "540", "7203", "k1"];
@@ -763,12 +766,14 @@ export function readerMapFromPrintedLines(lines: readonly string[]): ReaderMap {
   if (!hasStub) {
     missing.push("employer", "pay_period", "period_gross");
   }
+  const line1z = form1040Line1zAmount(cleaned);
   return {
     forms: forms.length ? forms : ["other"],
     names,
     entities,
     lines: linesOut,
     missing,
+    ...(line1z ? { line1z } : {}),
   };
 }
 
@@ -846,6 +851,7 @@ export function readerMapFromLook(
     entities,
     lines,
     missing,
+    ...(fromPrinted?.line1z ? { line1z: fromPrinted.line1z } : {}),
   };
 }
 

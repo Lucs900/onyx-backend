@@ -25,7 +25,6 @@ import {
   federalReturnConfirmCopy,
   PACKET_READING_LINE,
   PACKET_WAGES_UNREAD_LINE,
-  packetWagesOnReturnLine,
   returnCardLinesOnFile,
   hasLockedSuggestion,
   looksLikePaystubFields,
@@ -238,6 +237,7 @@ const LETTER_ROWS = [
   "HO & SOY INC 26,351. 26,351.",
   "Schedule E, Line 19 - 242 N ABEL ST",
   "Rent paid to Landlord. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . $ 27,324.",
+  "z Add lines 1a through 1h. . . . . . . . . . . . . 1z 96,000.",
 ];
 
 function pdfFromContentStreams(streams: string[]) {
@@ -1107,6 +1107,21 @@ async function main() {
   assert.equal(readerWageLine(letterMap), null);
   assert.equal(readerMapOpensReturnCard(letterMap), true);
   assert.ok(letterSpoken.every((line) => !/2,563,436|3,033,949|8,919|113,045|92-3033949/.test(line)));
+  const line1z = incomeLedgerFieldsFromPrintedLines([
+    "Form 1040",
+    "U.S. Individual Income Tax Return",
+    "1 a Total amount from Form(s) W-2, box 1 1a 96,000.",
+    "z Add lines 1a through 1h. . . . . . . . . . . . . 1z 96,000.",
+  ]);
+  assert.equal(line1z.wages, "96000", "Form 1040 line 1z is the wage amount");
+  const through1y = incomeLedgerFieldsFromPrintedLines([
+    "z Add lines 1a through 1y . . . . . . 1z 11,933.",
+  ]);
+  assert.equal(through1y.wages, undefined);
+  const caFace = incomeLedgerFieldsFromPrintedLines([
+    "z Add line 1a through line 1i. . . . . . 1z > 96,000.",
+  ]);
+  assert.equal(caFace.wages, undefined);
   const letterWrite = applyExtractedFields(
     {
       ...emptyDraft(),
@@ -1140,10 +1155,20 @@ async function main() {
   const letterUsed = resolveProposal(letterWrite.draft, "accept");
   const writtenLines = returnCardLinesOnFile(letterUsed);
   assert.match(letterCard, /\nUse this\?$/, "the card still ends on Use this?");
+  const cardLines = letterCard.replace(/\nUse this\?$/, "").split("\n");
+  assert.deepEqual(cardLines.slice(0, writtenLines.length), writtenLines, "Use this writes the six rows only");
+  const cardNotes = cardLines.slice(writtenLines.length);
+  assert.deepEqual(cardNotes, [
+    "Wages $96,000. W-2s still needed.",
+    "L&H VENTURES LLC. Partnership. 1065 still needed.",
+    "HO & SOY INC. S corp. Two lines stay. 1120-S still needed.",
+  ]);
+  assert.doesNotMatch(cardNotes.join("\n"), /Sichiv|Vouch|whose|92-3033949/);
+  assert.doesNotMatch(letterCard, /property return|separate business return|Reading the rest/);
   assert.deepEqual(
-    letterCard.replace(/\nUse this\?$/, "").split("\n"),
-    writtenLines,
-    "the card speaks each written line as its own row",
+    (nextFoxAsk(letterWrite.draft).actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+    "the card keeps Use this and Change",
   );
   assert.equal(
     writtenLines.filter((line) => line === "HO & SOY INC · S corp · $26,351.").length,
@@ -1188,21 +1213,6 @@ async function main() {
     "Create account, Log in, and Not now stay off the composer after this card",
   );
   assert.equal(readingDraft.incomeType.value ?? "", "");
-  const line1z = incomeLedgerFieldsFromPrintedLines([
-    "Form 1040",
-    "U.S. Individual Income Tax Return",
-    "1 a Total amount from Form(s) W-2, box 1 1a 96,000.",
-    "z Add lines 1a through 1h. . . . . . . . . . . . . 1z 96,000.",
-  ]);
-  assert.equal(line1z.wages, "96000", "Form 1040 line 1z is the wage amount");
-  const through1y = incomeLedgerFieldsFromPrintedLines([
-    "z Add lines 1a through 1y . . . . . . 1z 11,933.",
-  ]);
-  assert.equal(through1y.wages, undefined);
-  const caFace = incomeLedgerFieldsFromPrintedLines([
-    "z Add line 1a through line 1i. . . . . . 1z > 96,000.",
-  ]);
-  assert.equal(caFace.wages, undefined);
   const packetAfterCard = applyExtractedFields(letterUsed, {
     extractClass: "tax_return",
     confidence: 0.94,
@@ -1227,14 +1237,9 @@ async function main() {
     !previewFacts(packetAfterCard.draft).some((fact) => /gross receipts/i.test(`${fact.label} ${fact.value}`)),
     "the pad has no gross-receipts line",
   );
-  assert.doesNotMatch(nextFoxAsk(packetAfterCard.draft).text, /a month|suggesting \$/i);
-  const wageLine = packetAfterCard.quietLines.find((line) => /Wages are on the return/.test(line)) ?? "";
-  assert.equal(wageLine, packetWagesOnReturnLine(Number(line1z.wages)));
-  assert.match(wageLine, /\$96,000/);
-  assert.match(wageLine, /The W-2s are still needed/);
+  assert.doesNotMatch(nextFoxAsk(packetAfterCard.draft).text, /a month|suggesting \$|Wages \$|1065 still needed|1120-S still needed|Reading the rest/i);
+  assert.ok(!packetAfterCard.quietLines.some((line) => /Wages|1065 still needed|1120-S still needed|couldn.t read household wages/i.test(line)));
   assert.ok(!packetAfterCard.quietLines.includes(PACKET_WAGES_UNREAD_LINE));
-  assert.doesNotMatch(wageLine, /couldn.t read household wages/i);
-  assert.doesNotMatch(wageLine, /Sichiv|Vouch/);
   assert.equal(packetAfterCard.draft.facts?.wages, undefined);
   assert.equal(packetAfterCard.draft.facts?.household_wages, undefined);
   assert.ok(
@@ -1244,19 +1249,15 @@ async function main() {
         { id: "use", role: "client", text: "Use this" },
       ],
       { ...packetAfterCard.draft, path: "acr" },
-    ).some((item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now"),
-  );
-  assert.deepEqual(
-    deskStripActions(
-      [
-        { id: "card", role: "fox", text: letterCard },
-        { id: "use", role: "client", text: "Use this" },
-        { id: "wages", role: "fox", text: wageLine },
-      ],
-      packetAfterCard.draft,
-    ).map((item) => item.label),
-    ["Skip", "Upload this", "Looks right"],
-    "the wage line keeps Skip, Upload this, and Looks right",
+    ).some(
+      (item) =>
+        item.label === "Create account" ||
+        item.label === "Log in" ||
+        item.label === "Not now" ||
+        item.label === "Skip" ||
+        item.label === "Upload this" ||
+        item.label === "Looks right",
+    ),
   );
   assert.deepEqual(returnCardLinesOnFile(packetAfterCard.draft), writtenLines);
   const headingAsked = applyExtractedFields(emptyDraft(), {
