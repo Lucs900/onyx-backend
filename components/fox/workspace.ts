@@ -174,7 +174,7 @@ import {
   taxReturnPacketSettled,
   asksWhatElseOnReturn,
   PACKET_READING_LINE,
-  PACKET_WAGES_UNREAD_LINE,
+  isPacketWagesFollowLine,
   PACKET_NO_K1_C_LINE,
   SCHEDULE_E_RENTS_UNREAD_LINE,
   returnCardLinesOnFile,
@@ -2926,6 +2926,7 @@ function packetReadingAsk(draft: FoxIntakeDraft): {
   followUp?: string;
   actions?: FoxAction[];
 } {
+  if (returnCardLinesOnFile(draft).length > 0) return { text: "" };
   const released = { ...draft, taxReturnPacketRead: undefined };
   if (taxReturnPacketHoldAsk(released) || workspacePrompt(released) === "packet-read") {
     return { text: PACKET_READING_LINE };
@@ -4406,10 +4407,13 @@ export function deskStripActions(
   messages: FoxMessage[],
   draft: FoxIntakeDraft,
 ): FoxAction[] {
-  if (messages[messages.length - 1]?.text?.trim() === PACKET_WAGES_UNREAD_LINE) {
+  if (isPacketWagesFollowLine(messages[messages.length - 1]?.text ?? "")) {
     return packetWagesUnreadActions();
   }
-  const computed = deskStripActionsComputed(messages, draft);
+  const computed = deskStripActionsComputed(messages, draft).filter((action) => {
+    if (returnCardLinesOnFile(draft).length === 0) return true;
+    return action.label !== "Create account" && action.label !== "Log in" && action.label !== "Not now";
+  });
   if (!hasLinkedAccount(draft)) return computed;
   const live = computed.filter((item) => !isLiveCreateAccountAction(item));
   if (live.length) return live;
@@ -4474,6 +4478,15 @@ function deskStripActionsComputed(
       !draft.pendingAddress;
     if (usedConfirm) {
       const next = nextFoxAsk(draft);
+      if (returnCardLinesOnFile(draft).length > 0) {
+        const accountChip = (next.actions ?? []).some(
+          (action) =>
+            action.label === "Create account" ||
+            action.label === "Log in" ||
+            action.label === "Not now",
+        );
+        if (!next.text.trim() || next.text.trim() === PACKET_READING_LINE || accountChip) return [];
+      }
       if ((next.actions ?? []).length) return stripStreetSuggest(next.actions ?? []);
     }
     return [];

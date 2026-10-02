@@ -25,12 +25,14 @@ import {
   federalReturnConfirmCopy,
   PACKET_READING_LINE,
   PACKET_WAGES_UNREAD_LINE,
+  packetWagesOnReturnLine,
   returnCardLinesOnFile,
   hasLockedSuggestion,
   looksLikePaystubFields,
 } from "../components/fox/fileWrite";
 import { proposalAskCopy, resolveProposal } from "../components/fox/completeness";
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument, startOverWorkspace } from "../components/fox/store";
+import { incomeLedgerFieldsFromPrintedLines } from "../lib/income/ledger";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
 import { classifyAndExtract } from "../lib/docs/extract";
 import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
@@ -1172,15 +1174,35 @@ async function main() {
     })),
   };
   const readingAsk = nextFoxAsk(readingDraft);
-  const underReading = nextFoxAsk({ ...readingDraft, taxReturnPacketRead: undefined });
-  assert.equal(readingAsk.text, PACKET_READING_LINE, "the reading line stays the status sentence");
-  assert.deepEqual(
-    (readingAsk.actions ?? []).map((item) => item.label),
-    (underReading.actions ?? []).map((item) => item.label),
-    "the reading line keeps the chips that already belong under it",
+  assert.notEqual(readingAsk.text, PACKET_READING_LINE, "the reading beat stays off this card");
+  assert.equal(readingAsk.text, "");
+  assert.deepEqual(readingAsk.actions ?? [], []);
+  assert.ok(
+    !deskStripActions(
+      [
+        { id: "card", role: "fox", text: letterCard },
+        { id: "use", role: "client", text: "Use this" },
+      ],
+      readingDraft,
+    ).some((item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now"),
+    "Create account, Log in, and Not now stay off the composer after this card",
   );
-  assert.ok((readingAsk.actions ?? []).length > 0, "the reading line is not bare");
   assert.equal(readingDraft.incomeType.value ?? "", "");
+  const line1z = incomeLedgerFieldsFromPrintedLines([
+    "Form 1040",
+    "U.S. Individual Income Tax Return",
+    "1 a Total amount from Form(s) W-2, box 1 1a 96,000.",
+    "z Add lines 1a through 1h. . . . . . . . . . . . . 1z 96,000.",
+  ]);
+  assert.equal(line1z.wages, "96000", "Form 1040 line 1z is the wage amount");
+  const through1y = incomeLedgerFieldsFromPrintedLines([
+    "z Add lines 1a through 1y . . . . . . 1z 11,933.",
+  ]);
+  assert.equal(through1y.wages, undefined);
+  const caFace = incomeLedgerFieldsFromPrintedLines([
+    "z Add line 1a through line 1i. . . . . . 1z > 96,000.",
+  ]);
+  assert.equal(caFace.wages, undefined);
   const packetAfterCard = applyExtractedFields(letterUsed, {
     extractClass: "tax_return",
     confidence: 0.94,
@@ -1188,6 +1210,7 @@ async function main() {
       packet_read: "schedules",
       tax_year: "2024",
       form_1040: "1",
+      wages: line1z.wages,
       schedule_e_rents_received: "106404",
       schedule_e_cash_expenses: "31452",
       gross_receipts: "77131",
@@ -1205,21 +1228,35 @@ async function main() {
     "the pad has no gross-receipts line",
   );
   assert.doesNotMatch(nextFoxAsk(packetAfterCard.draft).text, /a month|suggesting \$/i);
+  const wageLine = packetAfterCard.quietLines.find((line) => /Wages are on the return/.test(line)) ?? "";
+  assert.equal(wageLine, packetWagesOnReturnLine(Number(line1z.wages)));
+  assert.match(wageLine, /\$96,000/);
+  assert.match(wageLine, /The W-2s are still needed/);
+  assert.ok(!packetAfterCard.quietLines.includes(PACKET_WAGES_UNREAD_LINE));
+  assert.doesNotMatch(wageLine, /couldn.t read household wages/i);
+  assert.doesNotMatch(wageLine, /Sichiv|Vouch/);
+  assert.equal(packetAfterCard.draft.facts?.wages, undefined);
+  assert.equal(packetAfterCard.draft.facts?.household_wages, undefined);
   assert.ok(
-    packetAfterCard.quietLines.includes(PACKET_WAGES_UNREAD_LINE),
-    "unread Form 1040 wages is still the line after this card",
+    !deskStripActions(
+      [
+        { id: "card", role: "fox", text: letterCard },
+        { id: "use", role: "client", text: "Use this" },
+      ],
+      { ...packetAfterCard.draft, path: "acr" },
+    ).some((item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now"),
   );
   assert.deepEqual(
     deskStripActions(
       [
         { id: "card", role: "fox", text: letterCard },
         { id: "use", role: "client", text: "Use this" },
-        { id: "wages", role: "fox", text: PACKET_WAGES_UNREAD_LINE },
+        { id: "wages", role: "fox", text: wageLine },
       ],
       packetAfterCard.draft,
     ).map((item) => item.label),
     ["Skip", "Upload this", "Looks right"],
-    "the wage-miss line keeps Skip, Upload this, and Looks right",
+    "the wage line keeps Skip, Upload this, and Looks right",
   );
   assert.deepEqual(returnCardLinesOnFile(packetAfterCard.draft), writtenLines);
   const headingAsked = applyExtractedFields(emptyDraft(), {

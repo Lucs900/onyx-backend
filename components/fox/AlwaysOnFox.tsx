@@ -251,7 +251,10 @@ import {
   transcriptSpeakKey,
   transcriptFollowUpAsk,
   transcriptOfferDone,
-  PACKET_WAGES_UNREAD_LINE,
+  isPacketWagesFollowLine,
+  PACKET_READING_LINE,
+  returnCardLinesOnFile,
+  taxReturnPacketHoldAsk,
   withTranscriptSpoken,
   matchingCoverLineOnFile,
   sameThinCoverRepeat,
@@ -494,6 +497,19 @@ function lastFoxIsOpenUseThis(messages: FoxMessage[]) {
   return isLiveFoxTurn(messages, index);
 }
 
+function returnCardHoldsAccountAsk(
+  draft: FoxIntakeDraft,
+  ask: { text: string; actions?: FoxAction[] },
+) {
+  if (returnCardLinesOnFile(draft).length === 0) return false;
+  const text = ask.text.trim();
+  if (!text || text === ACCOUNT_FIRST_OFFER || text === PACKET_READING_LINE) return true;
+  return (ask.actions ?? []).some(
+    (action) =>
+      action.label === "Create account" || action.label === "Log in" || action.label === "Not now",
+  );
+}
+
 function withNextAskIfUsedConfirm(messages: FoxMessage[], draft: FoxIntakeDraft): FoxMessage[] {
   const index = liveFoxTurnIndex(messages);
   if (index >= 0 && messages[index]?.text.trim() === MOTION_COPY.escalated) {
@@ -502,7 +518,7 @@ function withNextAskIfUsedConfirm(messages: FoxMessage[], draft: FoxIntakeDraft)
   if (index >= 0 && isLiveFoxTurn(messages, index)) {
     if (historyBubbleSpeech(messages[index]?.text)) return messages;
     const ask = nextFoxAsk(draft);
-    if (!ask.text.trim()) return messages;
+    if (!ask.text.trim() || returnCardHoldsAccountAsk(draft, ask)) return messages;
     return sealStoredFoxThread(
       messages.map((message, i) =>
         i === index
@@ -512,6 +528,7 @@ function withNextAskIfUsedConfirm(messages: FoxMessage[], draft: FoxIntakeDraft)
     );
   }
   const ask = nextFoxAsk(draft);
+  if (returnCardHoldsAccountAsk(draft, ask)) return messages;
   if (ask.text.trim() && !isUseThisConfirmText(ask.text)) {
     return sealStoredFoxThread([...messages, foxAskMessage(ask)]);
   }
@@ -1520,8 +1537,9 @@ export function AlwaysOnFox({
           return applyFoxAsk(next, scheduleEAsk);
         }
         const liveAfterPacket = getFoxDraft();
+        const wageFollow = (detail.quietLines ?? []).find((line) => isPacketWagesFollowLine(line));
         if (
-          (detail.quietLines ?? []).includes(PACKET_WAGES_UNREAD_LINE) &&
+          wageFollow &&
           !detail.conflict &&
           !liveAfterPacket.pendingProposal &&
           !liveAfterPacket.pendingConflict &&
@@ -1530,8 +1548,11 @@ export function AlwaysOnFox({
           !liveAfterPacket.awaitingRaiseWhen &&
           !liveAfterPacket.awaitingRaiseYtdFar
         ) {
-          const withoutWage = next.filter((message) => message.text !== PACKET_WAGES_UNREAD_LINE);
-          return applyFoxAsk(withoutWage, { text: PACKET_WAGES_UNREAD_LINE });
+          const withoutWage = next.filter(
+            (message) =>
+              !isPacketWagesFollowLine(message.text) && message.text.trim() !== PACKET_READING_LINE,
+          );
+          return applyFoxAsk(withoutWage, { text: wageFollow });
         }
         if (detail.conflict && !conflictAlreadySpoken(getFoxDraft(), detail.conflict)) {
           next.push(
@@ -1872,7 +1893,16 @@ export function AlwaysOnFox({
       if (lastFox && shouldHoldDocInviteForOpenUseThis(lastFox.text, lastFox.actions, ask.text)) {
         return painted;
       }
-      if (lastFox?.text.trim() === PACKET_WAGES_UNREAD_LINE) {
+      if (isPacketWagesFollowLine(lastFox?.text ?? "")) {
+        return painted;
+      }
+      if (
+        returnCardLinesOnFile(live).length > 0 &&
+        (taxReturnPacketHoldAsk(live) ||
+          !ask.text.trim() ||
+          ask.text.trim() === ACCOUNT_FIRST_OFFER ||
+          ask.text.trim() === PACKET_READING_LINE)
+      ) {
         return painted;
       }
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;

@@ -549,6 +549,7 @@ export function incomeLedgerFieldsFromPrintedLines(lines: string[]): Record<stri
   const wageMoney =
     "(-?\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|-?\\$?\\s*\\d{3,}(?:\\.\\d+)?|\\(\\s*\\$?\\s*\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?\\s*\\))";
   const wages =
+    blob.match(new RegExp(`add lines 1a through 1h\\b[\\s\\S]{0,800}?\\b1z\\s+${wageMoney}`, "i"))?.[1] ||
     moneyNearLabel(blob, /1z\s+wages,?\s*salaries,?\s*tips/i) ||
     moneyNearLabel(blob, /1a\s+total amount from form\(s\)\s*w-?2/i) ||
     moneyNearLabel(blob, /1a\s+wages,?\s*salaries,?\s*tips/i) ||

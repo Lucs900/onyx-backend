@@ -761,6 +761,18 @@ export const PACKET_LINES_MISSING_LINE =
   "I didn’t see cover wages, Schedule E, or a K-1 on these pages.";
 export const PACKET_WAGES_UNREAD_LINE =
   "I couldn’t read household wages on the Form 1040 in this file.";
+
+/** Line 1z was read. It is a back note, not income, and not a name. */
+export function packetWagesOnReturnLine(amount: number): string {
+  const shown = Math.round(amount).toLocaleString("en-US");
+  return `Wages are on the return, $${shown}. The W-2s are still needed.`;
+}
+
+export function isPacketWagesFollowLine(text: string): boolean {
+  const line = text.trim();
+  if (line === PACKET_WAGES_UNREAD_LINE) return true;
+  return /^Wages are on the return, \$[\d,]+\. The W-2s are still needed\.$/.test(line);
+}
 /** After rental Yes: rents/expenses were not on that page. Invent nothing. */
 export const SCHEDULE_E_RENTS_UNREAD_LINE =
   "I didn’t get rents or cash expenses on that Schedule E page.";
@@ -2058,6 +2070,10 @@ export function applyExtractedFields(
       fields = nextFields;
     }
   }
+  const cardWages =
+    returnCardLinesOnFile(draft).length > 0
+      ? Number(String(fields.wages ?? "").replace(/[^\d.]/g, ""))
+      : 0;
   fields = fieldsAfterSpokenReturnCard(draft, fields, packetContinue);
   draft = withFileIncomeHygiene(draft, extractClass, fields);
   if (extractClass === "tax_return") {
@@ -2875,7 +2891,14 @@ export function applyExtractedFields(
       Boolean(next.facts?.household_wages?.confirmed);
     const hasRows = (next.incomeLedger ?? []).some((row) => row.status === "suggested");
     const printedWages = Number(String(fields.wages ?? "").replace(/[^\d.]/g, ""));
-    if (!next.taxReturnPacketSpoken && !offeredWages && printedWages <= 0) {
+    const wagesOnCard =
+      Number.isFinite(cardWages) && cardWages > 0 && returnCardLinesOnFile(next).length > 0
+        ? Math.round(cardWages)
+        : 0;
+    if (!next.taxReturnPacketSpoken && !offeredWages && wagesOnCard > 0) {
+      next = { ...next, taxReturnPacketSpoken: true };
+      quietLines.push(packetWagesOnReturnLine(wagesOnCard));
+    } else if (!next.taxReturnPacketSpoken && !offeredWages && printedWages <= 0) {
       if (
         taxReturnWrittenOnFile(next) &&
         !isTranscriptOnFile(next) &&
