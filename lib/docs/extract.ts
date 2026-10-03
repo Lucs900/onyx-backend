@@ -1082,6 +1082,25 @@ function fieldsLockAReturnLine(fields?: Record<string, string | null | undefined
   );
 }
 
+function namedK1Box1OnLines(lines: readonly string[] | null | undefined) {
+  if (!lines?.length) return false;
+  return readerMapFromPrintedLines(lines).lines.some(
+    (line) => line.kind === "k1_box1" && String(line.value ?? "").trim(),
+  );
+}
+
+/**
+ * Cover and officer pages of an 1120-S can lock before the shareholder pages.
+ * A named K-1 already on the first pages stays on that read.
+ */
+export function shouldReadLater1120sK1Pages(
+  lines: readonly string[] | null | undefined,
+  filename?: string | null,
+) {
+  if (!filenameLooksLike1120s(filename)) return false;
+  return !namedK1Box1OnLines(lines);
+}
+
 /** pdf.js glyphs first. A scrape-only 1040 is not a read of the packet. */
 async function readReturnTextLayer(
   bytes: Uint8Array,
@@ -1092,6 +1111,7 @@ async function readReturnTextLayer(
   const head = await readPdfJsTextLayer(bytes, filename);
   if (
     head?.length &&
+    !shouldReadLater1120sK1Pages(head, filename) &&
     (readerMapOpensReturnCard(readerMapFromPrintedLines(head)) || printedLocksReturnLine(head))
   ) {
     return { lines: head, pastFace: false };

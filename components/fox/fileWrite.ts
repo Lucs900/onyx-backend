@@ -1281,10 +1281,14 @@ export type Open1120sPaper = {
   ordinary: string;
   otherPerson: string;
   otherOrdinary: string;
+  /** The other named person is already on this drop's California K-1. Not the yes/no ask. */
+  secondCard: boolean;
 };
 
-function box1PeopleFromMap(map?: ReaderMap | null): { entity: string; person: string; ordinary: string }[] {
-  const rows: { entity: string; person: string; ordinary: string }[] = [];
+function box1PeopleFromMap(
+  map?: ReaderMap | null,
+): { entity: string; person: string; ordinary: string; california: boolean }[] {
+  const rows: { entity: string; person: string; ordinary: string; california: boolean }[] = [];
   for (const line of map?.lines ?? []) {
     if (line.kind !== "k1_box1") continue;
     const label = String(line.label ?? "");
@@ -1294,7 +1298,7 @@ function box1PeopleFromMap(map?: ReaderMap | null): { entity: string; person: st
     const ordinary = label.slice(splitAt + 3).replace(/[^\d.]/g, "");
     const person = k1PersonName(line.value, entity);
     if (!entity || !person || !ordinary) continue;
-    rows.push({ entity, person, ordinary });
+    rows.push({ entity, person, ordinary, california: line.note === "100s" });
   }
   return rows;
 }
@@ -1347,6 +1351,7 @@ export function open1120sPaper(
       ordinary: first?.ordinary ?? "",
       otherPerson: second?.person ?? "",
       otherOrdinary: second?.ordinary ?? "",
+      secondCard: Boolean(second?.california),
     };
   }
   const ordinary = String(fields.k1_ordinary_income ?? "").replace(/[^\d.]/g, "");
@@ -1359,6 +1364,7 @@ export function open1120sPaper(
     ordinary: person ? ordinary : "",
     otherPerson,
     otherOrdinary: otherPerson ? otherOrdinary : "",
+    secondCard: false,
   };
 }
 
@@ -1378,6 +1384,7 @@ export function k1Box1PersonProposal(held: Open1120sPaper): FactProposal {
       ...(held.otherOrdinary
         ? [{ field: "other_k1_ordinary_income", value: held.otherOrdinary, label: "other K-1 Box 1" }]
         : []),
+      ...(held.secondCard ? [{ field: "second_k1_card", value: "yes", label: "K-1" }] : []),
     ],
   };
 }
@@ -1385,8 +1392,15 @@ export function k1Box1PersonProposal(held: Open1120sPaper): FactProposal {
 export function k1Box1PersonCopy(proposal: { value: string; extras?: { field: string; value: string }[] }): string {
   const entity = proposal.extras?.find((item) => item.field === "entity_name")?.value?.trim() ?? "";
   const name = proposal.value.trim();
+  const ordinary = proposal.extras?.find((item) => item.field === "k1_ordinary_income")?.value ?? "";
+  const digits = ordinary.replace(/[^\d.]/g, "");
+  const amount = Number(digits);
+  const money =
+    digits && Number.isFinite(amount) && amount !== 0
+      ? `, ordinary business income $${amount.toLocaleString("en-US")}`
+      : "";
   const where = entity ? ` for ${entity}` : "";
-  return `Form 1120-S${where}. K-1 Box 1 is ${name}. Use this?`;
+  return `Form 1120-S${where}. K-1 Box 1 is ${name}${money}. Use this?`;
 }
 
 /** The open 1120-S had no named K-1 person. Speech only. Not a write. Not Use this. */

@@ -92,9 +92,17 @@ export function looksLikeScheduleEHeader(text: string) {
 
 /** Form 1065 / 1120-S K-1 face. Schedule E Part II caution text is not this. */
 export function looksLikeK1FormHeader(text: string) {
-  const t = String(text ?? "").replace(/\u00a0/g, " ");
+  const t = String(text ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u2018\u2019\u201B\u2032]/g, "'");
   if (looksLikeScheduleEHeader(t)) return false;
   if (/\bSchedule\s+K-?1\s*\(\s*Form\s+(?:1065|1120-?S)\s*\)/i.test(t)) return true;
+  if (
+    /\bK-1\s*\(\s*100\s*S\s*\)/i.test(t) &&
+    (/\bshareholder'?s\s+share\b/i.test(t) || /\bcalifornia\s+schedule\b/i.test(t))
+  ) {
+    return true;
+  }
   if (
     /\bSchedule\s+K-?1\b/i.test(t) &&
     (/\bPartner'?s\s+Share\b/i.test(t) || /\bShareholder'?s\s+Share\b/i.test(t))

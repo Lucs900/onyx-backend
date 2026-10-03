@@ -24,6 +24,8 @@ export type ReaderLine = {
   kind: string;
   value: string;
   label?: string;
+  /** California Schedule K-1 (100S). A form mark, not a person. */
+  note?: string;
 };
 
 export type ReaderMap = {
@@ -122,7 +124,10 @@ function formFromBlob(blob: string): ReaderForm[] {
   if (/\bform\s*8879(?:-\s*(?:s|c|corp))?\b/i.test(blob) || /\b8879-corp\b/i.test(blob)) {
     forms.push("8879");
   }
-  if (/\bschedule\s+k-?1\b/i.test(blob) && !/\bschedule\s+e\s*\(\s*form\s+1040\s*\)/i.test(blob)) {
+  if (
+    (/\bschedule\s+k-?1\b/i.test(blob) || /\bk-?1\s*\(\s*100\s*s\s*\)/i.test(blob)) &&
+    !/\bschedule\s+e\s*\(\s*form\s+1040\s*\)/i.test(blob)
+  ) {
     forms.push("k1");
   }
   if (/\bschedule\s+c\b/i.test(blob)) forms.push("schedule_c");
@@ -357,7 +362,7 @@ function scheduleHeading(line: string): "c" | "e" | "k1" | "other" | null {
   ) {
     return "e";
   }
-  if (/^\s*schedule\s+k-?1\b/i.test(head)) {
+  if (/^\s*schedule\s+k-?1\b/i.test(head) || lineMentionsCaliforniaK1(line)) {
     // A line-42 cross reference is not the K-1 form. Leave the schedule that was open.
     if (/\bsee\s+instructions\b/i.test(head) || /\bbox\s+\d+/i.test(head)) return "other";
     return "k1";
@@ -407,6 +412,34 @@ function isEinBody(amount: string, ein: string) {
 function qualifiedAmount(line: string, ein = "") {
   const tokens = businessMoneyTokens(line).filter((amount) => !isEinBody(amount, ein));
   return tokens.at(-1) ?? "";
+}
+
+/** Box 1 is the first ordinary column. A later California column is not that box. */
+function firstBusinessAmount(line: string, ein = "") {
+  const tokens = businessMoneyTokens(line).filter((amount) => !isEinBody(amount, ein));
+  return tokens[0] ?? "";
+}
+
+function plainApostrophe(line: string) {
+  return line.replace(/[\u2018\u2019\u201B\u2032]/g, "'");
+}
+
+function lineMentionsCaliforniaK1(line: string) {
+  return /\bK-1\s*\(\s*100\s*S\s*\)/i.test(line);
+}
+
+function californiaK1Footer(line: string) {
+  return lineMentionsCaliforniaK1(line) && /\bside\s*[12]\b/i.test(line);
+}
+
+/** Name and identifying number share a baseline. The number is not part of the name. */
+function lineWithoutTaxId(line: string) {
+  return line
+    .replace(/\b\d{3}-\d{2}-\d{4}\b/g, " ")
+    .replace(/\b\d{2}-\d{7}\b/g, " ")
+    .replace(/\b[Xx*]{3}-[Xx*]{2}-[Xx*\d]{4}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Heading, then the income line. A nearby dollar, a year, or an EIN is not a business. */
@@ -482,6 +515,7 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
   let k1PersonEmitted = false;
   let k1CorpIdentity = false;
   let k1SkipBusinessName = false;
+  let k1California = false;
   let cWho = "";
   let cBusiness = "";
   let cNet = "";
@@ -525,6 +559,7 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       kind: "k1_box1",
       value: k1Person,
       label: `${pendingK1} · ${k1OrdinaryAmount}`,
+      ...(k1California ? { note: "100s" } : {}),
     });
     k1PersonEmitted = true;
   };
@@ -568,7 +603,20 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
       k1PersonEmitted = false;
       k1CorpIdentity = false;
       k1SkipBusinessName = false;
+      k1California = false;
     }
+  };
+
+  const takeOrdinary = (amount: string) => {
+    if (amount && !k1OrdinaryAmount) k1OrdinaryAmount = amount;
+    if (!k1OrdinaryAmount || !pendingK1) return;
+    if (!k1TookOrdinary) {
+      out.push({ kind: "k1", value: k1OrdinaryAmount, label: k1Label() });
+      k1TookOrdinary = true;
+      bare = [];
+      wantOrdinary = false;
+    }
+    emitK1Person();
   };
 
   for (const line of cleaned) {
@@ -592,7 +640,16 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
 
     const heading = scheduleHeading(line);
     if (heading === "c" || heading === "e" || heading === "k1") {
-      start(heading);
+      const sameCalifornia =
+        heading === "k1" &&
+        block === "k1" &&
+        !k1PersonEmitted &&
+        lineMentionsCaliforniaK1(line) &&
+        (californiaK1Footer(line) || Boolean(k1Person));
+      if (!sameCalifornia) {
+        start(heading);
+        if (heading === "k1") k1California = lineMentionsCaliforniaK1(line);
+      }
       continue;
     }
     if (heading === "other") {
@@ -739,30 +796,35 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
     }
 
     if (block === "k1") {
-      const entity = looksLikeEntity(line) ? entityFromLine(line) : "";
-      if (entity && !pendingK1) pendingK1 = entity;
-      if (/\bs\s*corp/i.test(line)) k1Role = k1Role || "S corp";
-      const ein = line.match(/\b(\d{2}-\d{7})\b/);
+      const plain = plainApostrophe(line);
+      const entity = looksLikeEntity(plain) ? entityFromLine(plain) : "";
+      if (entity && !pendingK1) {
+        pendingK1 = entity;
+        if (k1OrdinaryAmount) takeOrdinary(k1OrdinaryAmount);
+      }
+      if (/\bs\s*corp/i.test(plain)) k1Role = k1Role || "S corp";
+      const ein = plain.match(/\b(\d{2}-\d{7})\b/);
       if (ein) k1Ein = ein[1] ?? k1Ein;
-      if (/corporation'?s name\b/i.test(line)) k1CorpIdentity = true;
-      if (/shareholder'?s name\b/i.test(line)) {
+      if (/corporation'?s name\b/i.test(plain)) k1CorpIdentity = true;
+      if (/shareholder'?s name\b/i.test(plain)) {
         k1CorpIdentity = false;
         k1SkipBusinessName = false;
       }
-      if (/disregarded entity|entity responsible for reporting|what type of entity is this shareholder/i.test(line)) {
+      if (/disregarded entity|entity responsible for reporting|what type of entity is this shareholder/i.test(plain)) {
         k1SkipBusinessName = true;
       }
-      if (businessIdentityMark(line)) k1SkipBusinessName = !businessIdentityHasName(line);
-      if (!k1Person && looksLikePersonName(line)) {
+      if (businessIdentityMark(plain)) k1SkipBusinessName = !businessIdentityHasName(plain);
+      const personLine = lineWithoutTaxId(plain);
+      if (!k1Person && looksLikePersonName(personLine)) {
         if (k1CorpIdentity || k1SkipBusinessName) k1SkipBusinessName = false;
         else {
-          k1Person = line.replace(/\s+/g, " ").trim();
+          k1Person = personLine;
           emitK1Person();
         }
       }
       if (!k1Person) {
-        const labeled = line.match(
-          /shareholder'?s name, address, city, state(?:, and ZIP code)?\s+([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3})\b/i,
+        const labeled = plain.match(
+          /shareholder'?s name(?:, address, city, state(?:, and ZIP code)?)?\s+([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3})(?=\s+shareholder\b|\s*$)/i,
         );
         const captured = labeled?.[1]?.replace(/\s+/g, " ").trim() ?? "";
         if (captured && looksLikePersonName(captured)) {
@@ -770,33 +832,17 @@ function businessesFromPrinted(cleaned: string[]): ReaderLine[] {
           emitK1Person();
         }
       }
-      if (/ordinary business income/i.test(line)) {
-        const amount = qualifiedAmount(line, k1Ein);
-        if (amount && pendingK1) {
-          out.push({ kind: "k1", value: amount, label: k1Label() });
-          k1OrdinaryAmount = amount;
-          emitK1Person();
-          k1TookOrdinary = true;
-          bare = [];
-          wantOrdinary = false;
-        } else {
-          wantOrdinary = true;
-        }
+      if (/ordinary business income/i.test(plain)) {
+        const amount = firstBusinessAmount(plain, k1Ein);
+        if (amount) takeOrdinary(amount);
+        if (!k1TookOrdinary) wantOrdinary = true;
         k1BareClosed = true;
         continue;
       }
       if (wantOrdinary) {
-        const amount = qualifiedAmount(line, k1Ein);
-        if (amount && pendingK1) {
-          out.push({ kind: "k1", value: amount, label: k1Label() });
-          k1OrdinaryAmount = amount;
-          emitK1Person();
-          k1TookOrdinary = true;
-          bare = [];
-          wantOrdinary = false;
-        } else if (/[A-Za-z]{4,}/.test(line)) {
-          wantOrdinary = false;
-        }
+        const amount = firstBusinessAmount(plain, k1Ein);
+        if (amount) takeOrdinary(amount);
+        else if (/[A-Za-z]{4,}/.test(plain)) wantOrdinary = false;
         k1BareClosed = true;
         continue;
       }

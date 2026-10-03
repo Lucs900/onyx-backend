@@ -39,6 +39,7 @@ import {
   K1_BOX1_PERSON_FIELD,
   drop1120sReturnPaper,
   k1Box1PersonCopy,
+  k1Box1PersonProposal,
   returnCardOpenPapers,
   returnCardBackNotes,
   returnCardSentences,
@@ -1717,8 +1718,31 @@ export function resolveProposal(
     const entity = proposal.extras?.find((item) => item.field === "entity_name")?.value ?? "";
     const otherName = proposal.extras?.find((item) => item.field === "other_k1_partner_name")?.value ?? "";
     const otherOrdinary = proposal.extras?.find((item) => item.field === "other_k1_ordinary_income")?.value ?? "";
-    const named = writeConfirmedFact(draft, "k1_partner_name", proposal.value.trim(), "document");
+    const secondCard = proposal.extras?.some((item) => item.field === "second_k1_card" && item.value === "yes");
+    const incoming = proposal.value.trim();
+    const existingName = String(draft.facts?.k1_partner_name?.value ?? "").trim();
+    const nameField =
+      existingName && existingName.toLowerCase() !== incoming.toLowerCase()
+        ? "other_k1_partner_name"
+        : "k1_partner_name";
+    const named = writeConfirmedFact(draft, nameField, incoming, "document");
     const cleared = drop1120sReturnPaper(named, entity);
+    if (secondCard && otherName.trim()) {
+      return {
+        ...cleared,
+        pendingProposal: k1Box1PersonProposal({
+          entity,
+          person: otherName.trim(),
+          ordinary: otherOrdinary.replace(/[^\d.]/g, ""),
+          otherPerson: "",
+          otherOrdinary: "",
+          secondCard: false,
+        }),
+        pendingConflict: null,
+        returnPaperOtherK1: false,
+        k1PaperNoPerson: undefined,
+      };
+    }
     const hasOther = Boolean(otherName.trim() || otherOrdinary.trim());
     return {
       ...cleared,
@@ -1726,6 +1750,7 @@ export function resolveProposal(
       pendingConflict: null,
       returnPaperOtherK1: hasOther,
       otherK1LoanAsked: hasOther ? false : cleared.otherK1LoanAsked,
+      k1PaperNoPerson: undefined,
     };
   }
   if (winner === "decline") {

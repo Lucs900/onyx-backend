@@ -37,7 +37,7 @@ import { proposalAskCopy, resolveProposal } from "../components/fox/completeness
 import { applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument, startOverWorkspace } from "../components/fox/store";
 import { incomeLedgerFieldsFromPrintedLines } from "../lib/income/ledger";
 import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
-import { classifyAndExtract } from "../lib/docs/extract";
+import { classifyAndExtract, shouldReadLater1120sK1Pages } from "../lib/docs/extract";
 import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
 import {
   deskStripActions,
@@ -1586,6 +1586,125 @@ async function main() {
   assert.equal(otherYes.facts?.other_k1_box1, undefined);
   assert.equal(otherYes.incomeType.value ?? "", "");
   assert.notEqual(nextFoxAsk(otherYes).text, otherAsk.text, "the other K-1 asks once");
+  const californiaLayer = [
+    ...headingLayer,
+    "TAXABLE YEAR Shareholder\u2019s Share of Income, CALIFORNIA SCHEDULE",
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "Corporation\u2019s name",
+    "HO & SOY INC",
+    "EDNA DONUT BY GEORGE",
+    "Shareholder\u2019s name Shareholder\u2019s identifying number",
+    "Mary Ann Lee 123-45-6789",
+    "Shareholder\u2019s percentage of stock ownership for the tax year 50.00%",
+    "1 Ordinary business income (loss) 18,420 0 18,420",
+    "Schedule K-1 (100S) 2024 Side 1",
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "Corporation\u2019s name",
+    "HO & SOY INC",
+    "Shareholder\u2019s name",
+    "Chris Nguyen XXX-XX-4321",
+    "Shareholder\u2019s percentage of stock ownership 50%",
+    "1 Ordinary business income (loss) 22,040",
+    "Side 2 Schedule K-1 (100S) 2024",
+  ];
+  const californiaMap = readerMapFromPrintedLines(californiaLayer);
+  const californiaPeople = californiaMap.lines.filter((line) => line.kind === "k1_box1");
+  assert.deepEqual(
+    californiaPeople.map((line) => [line.value, line.label, line.note]),
+    [
+      ["Mary Ann Lee", "HO & SOY INC · 18420", "100s"],
+      ["Chris Nguyen", "HO & SOY INC · 22040", "100s"],
+    ],
+    "each California K-1 (100S) shareholder is Box 1",
+  );
+  assert.ok(!californiaMap.names.some((item) => /edna|donut|george/i.test(item)));
+  assert.equal(
+    shouldReadLater1120sK1Pages(headingLayer, "Ho Soy Inc 2024 Tax returns 1120S.pdf"),
+    true,
+    "an 1120-S cover still has to reach the shareholder pages",
+  );
+  assert.equal(
+    shouldReadLater1120sK1Pages(entityLayer, "Ho Soy Inc 2024 Tax returns 1120S.pdf"),
+    false,
+    "a named K-1 already on the first pages stays on that read",
+  );
+  assert.equal(
+    shouldReadLater1120sK1Pages(headingLayer, "30-1040-2024-tax-return-combes.pdf"),
+    false,
+    "a personal return stays on the first pages",
+  );
+  const californiaTradeMap = readerMapFromPrintedLines([
+    ...headingLayer,
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "Corporation\u2019s name",
+    "HO & SOY INC",
+    "EDNA DONUT BY GEORGE",
+    "1 Ordinary business income (loss) 18,420",
+  ]);
+  assert.equal(californiaTradeMap.lines.some((line) => line.kind === "k1_box1"), false);
+  const californiaMarkMap = readerMapFromPrintedLines([
+    ...headingLayer,
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "HO & SOY INC",
+    "Shareholder\u2019s name",
+    "PTP PTP PTP",
+    "1 Ordinary business income (loss) 18,420",
+  ]);
+  assert.equal(californiaMarkMap.lines.some((line) => line.kind === "k1_box1"), false);
+  const californiaPaper = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      officer_compensation: "96000",
+      gross_receipts: "535394",
+      ein: "92-3033949",
+      ownership_percent: "50",
+    },
+    readerMap: californiaMap,
+  });
+  assert.ok(!californiaPaper.quietLines.some((line) => isK1NoPersonLine(line)));
+  assert.equal(californiaPaper.draft.k1PaperNoPerson, undefined);
+  const firstCalifornia = nextFoxAsk(californiaPaper.draft);
+  assert.match(firstCalifornia.text, /Form 1120-S for HO & SOY INC/);
+  assert.match(firstCalifornia.text, /K-1 Box 1 is Mary Ann Lee, ordinary business income \$18,420/);
+  assert.match(firstCalifornia.text, /Use this\?$/);
+  assert.doesNotMatch(firstCalifornia.text, /Chris Nguyen|%|6789|4321/);
+  assert.doesNotMatch(firstCalifornia.text, /No person was on the K-1|92-3033949|officer|a month|EDNA|DONUT/);
+  assert.deepEqual((firstCalifornia.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+  assert.equal(californiaPaper.draft.incomeType.value ?? "", "");
+  assert.deepEqual(returnCardLinesOnFile(californiaPaper.draft), writtenLines);
+  const firstCaliforniaUsed = resolveProposal(californiaPaper.draft, "accept");
+  assert.equal(firstCaliforniaUsed.facts?.k1_partner_name?.value, "Mary Ann Lee");
+  assert.equal(firstCaliforniaUsed.facts?.other_k1_partner_name, undefined);
+  assert.equal(firstCaliforniaUsed.facts?.qualifying_income, undefined);
+  assert.equal(firstCaliforniaUsed.facts?.k1_ordinary_income, undefined);
+  assert.equal(firstCaliforniaUsed.facts?.officer_compensation, undefined);
+  assert.equal(firstCaliforniaUsed.incomeType.value ?? "", "");
+  assert.equal(firstCaliforniaUsed.returnPaperOtherK1, false);
+  assert.deepEqual(
+    previewFacts(firstCaliforniaUsed).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    ["W-2s for the $96,000.", "L&H VENTURES LLC. 1065."],
+  );
+  const secondCalifornia = nextFoxAsk(firstCaliforniaUsed);
+  assert.match(secondCalifornia.text, /K-1 Box 1 is Chris Nguyen, ordinary business income \$22,040/);
+  assert.match(secondCalifornia.text, /Use this\?$/);
+  assert.doesNotMatch(secondCalifornia.text, /Other K-1|on this loan|%|No person was on the K-1/);
+  assert.deepEqual((secondCalifornia.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+  const secondCaliforniaUsed = resolveProposal(firstCaliforniaUsed, "accept");
+  assert.equal(secondCaliforniaUsed.facts?.k1_partner_name?.value, "Mary Ann Lee");
+  assert.equal(secondCaliforniaUsed.facts?.other_k1_partner_name?.value, "Chris Nguyen");
+  assert.equal(secondCaliforniaUsed.facts?.qualifying_income, undefined);
+  assert.equal(secondCaliforniaUsed.facts?.other_k1_box1, undefined);
+  assert.equal(secondCaliforniaUsed.pendingProposal, null);
+  assert.equal(secondCaliforniaUsed.returnPaperOtherK1, false);
+  assert.notEqual(nextFoxAsk(secondCaliforniaUsed).text, "Other K-1 — is that person on this loan?");
+  assert.doesNotMatch(nextFoxAsk(secondCaliforniaUsed).text, /No person was on the K-1/);
+  assert.equal(secondCaliforniaUsed.incomeType.value ?? "", "");
+  assert.deepEqual(returnCardLinesOnFile(secondCaliforniaUsed), writtenLines);
+  assert.ok(returnCardLinesOnFile(secondCaliforniaUsed).some((line) => /ABEL/i.test(line)));
   const afterOther = deskStripActions(
     [{ id: "other-k1", role: "fox", text: otherAsk.text }],
     otherYes,
