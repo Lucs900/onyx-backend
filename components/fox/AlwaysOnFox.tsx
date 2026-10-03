@@ -253,6 +253,8 @@ import {
   transcriptFollowUpAsk,
   transcriptOfferDone,
   isPacketWagesFollowLine,
+  isK1NoPersonLine,
+  k1NoPersonLine,
   PACKET_READING_LINE,
   returnCardLinesOnFile,
   taxReturnPacketHoldAsk,
@@ -437,6 +439,23 @@ function paintPastReceived(messages: FoxMessage[]): FoxMessage[] {
         id: `${last.id}:read`,
         role: "fox",
         text: cardText,
+      },
+    ];
+  }
+  const noPersonReason =
+    returnCardLinesOnFile(live).length > 0 && live.k1PaperNoPerson && !live.pendingProposal
+      ? k1NoPersonLine(live.k1PaperNoPerson)
+      : "";
+  const noPersonSpoken =
+    Boolean(noPersonReason) &&
+    cut.some((message) => message.role === "fox" && message.text.trim() === noPersonReason);
+  if (noPersonReason && !noPersonSpoken) {
+    return [
+      ...cut,
+      {
+        id: `${last.id}:read`,
+        role: "fox",
+        text: noPersonReason,
       },
     ];
   }
@@ -1524,6 +1543,11 @@ export function AlwaysOnFox({
             actions: unreadAskActions(live),
           });
         }
+        const noPersonLine = (detail.quietLines ?? []).find((line) => isK1NoPersonLine(line));
+        if (noPersonLine && !detail.conflict && !getFoxDraft().pendingProposal) {
+          const withoutReason = next.filter((message) => !isK1NoPersonLine(message.text));
+          return applyFoxAsk(withoutReason, { text: noPersonLine });
+        }
         const scheduleEDraft = (() => {
           const current = getFoxDraft();
           if (isTranscriptOnFile(current)) return current;
@@ -1911,6 +1935,9 @@ export function AlwaysOnFox({
         return painted;
       }
       if (isPacketWagesFollowLine(lastFox?.text ?? "")) {
+        return painted;
+      }
+      if (isK1NoPersonLine(lastFox?.text ?? "")) {
         return painted;
       }
       if (

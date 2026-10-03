@@ -181,6 +181,8 @@ import {
   returnPapersOnFile,
   K1_BOX1_PERSON_FIELD,
   k1Box1PersonCopy,
+  k1NoPersonLine,
+  isK1NoPersonLine,
   taxReturnStructureValue,
   canSpeakDocStamp,
   transcriptSpeakKey,
@@ -3014,6 +3016,12 @@ export function docReactionAsk(
   if (draft.pendingProposal?.field === K1_BOX1_PERSON_FIELD) {
     return liveProposalAsk(draft, draft.pendingProposal);
   }
+  if (draft.k1PaperNoPerson && !draft.pendingProposal && !draft.pendingConflict) {
+    return {
+      text: k1NoPersonLine(draft.k1PaperNoPerson),
+      actions: packetWagesUnreadActions(),
+    };
+  }
   if (draft.returnPaperOtherK1 && !draft.otherK1LoanAsked && !draft.pendingProposal) {
     return otherK1LoanAskCopy(draft);
   }
@@ -4224,6 +4232,12 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (draft.pendingProposal?.field === K1_BOX1_PERSON_FIELD && shouldSpeakPendingConfirm(draft)) {
     return liveProposalAsk(draft, draft.pendingProposal);
   }
+  if (draft.k1PaperNoPerson && !draft.pendingProposal && !draft.pendingConflict) {
+    return {
+      text: k1NoPersonLine(draft.k1PaperNoPerson),
+      actions: packetWagesUnreadActions(),
+    };
+  }
   if (draft.returnPaperOtherK1 && !draft.otherK1LoanAsked && !draft.pendingProposal) {
     return otherK1LoanAskCopy(draft);
   }
@@ -4469,6 +4483,9 @@ export function deskStripActions(
   draft: FoxIntakeDraft,
 ): FoxAction[] {
   if (isPacketWagesFollowLine(messages[messages.length - 1]?.text ?? "")) {
+    return packetWagesUnreadActions();
+  }
+  if (isK1NoPersonLine(lastFoxTurn(messages)?.text ?? "")) {
     return packetWagesUnreadActions();
   }
   const computed = deskStripActionsComputed(messages, draft).filter((action) => {

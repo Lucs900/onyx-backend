@@ -27,6 +27,7 @@ import {
   PACKET_READING_LINE,
   PACKET_WAGES_UNREAD_LINE,
   k1PersonName,
+  isK1NoPersonLine,
   returnCardLinesOnFile,
   taxReturnPacketDoc,
   hasLockedSuggestion,
@@ -1313,6 +1314,10 @@ async function main() {
     readerMap: entityHeadingMap,
   });
   assert.equal(headingOnly.draft.pendingProposal, null, "a heading does not open Use this");
+  assert.ok(
+    headingOnly.quietLines.some((line) => isK1NoPersonLine(line)),
+    "a heading says the 1120-S is still needed",
+  );
   assert.deepEqual(
     previewFacts(headingOnly.draft).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
     previewFacts(paperBase).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
@@ -1356,6 +1361,14 @@ async function main() {
   );
   assert.equal(repeatedMarkWrite.draft.facts?.k1_partner_name, undefined);
   assert.equal(repeatedMarkWrite.draft.incomeType.value ?? "", "");
+  assert.ok(
+    repeatedMarkWrite.quietLines.some((line) => isK1NoPersonLine(line)),
+    "a repeated mark says the 1120-S is still needed",
+  );
+  assert.doesNotMatch(
+    repeatedMarkWrite.quietLines.find((line) => isK1NoPersonLine(line)) ?? "",
+    /Use this/,
+  );
   const markThenPerson = readerMapFromPrintedLines([
     ...repeatedMarkLayer,
     "Sichiv Ho",
@@ -1400,6 +1413,23 @@ async function main() {
   );
   assert.equal(tradeStyleWrite.draft.facts?.k1_partner_name, undefined);
   assert.equal(tradeStyleWrite.draft.incomeType.value ?? "", "");
+  const noPersonLine = tradeStyleWrite.quietLines.find((line) => isK1NoPersonLine(line)) ?? "";
+  assert.match(noPersonLine, /1120-S is still needed\. No person was on the K-1\.$/);
+  assert.doesNotMatch(noPersonLine, /Use this|92-|26,351/);
+  assert.equal(tradeStyleWrite.draft.k1PaperNoPerson, "HO & SOY INC");
+  assert.deepEqual(returnCardLinesOnFile(tradeStyleWrite.draft), returnCardLinesOnFile(paperBase));
+  const reasonAsk = nextFoxAsk(tradeStyleWrite.draft);
+  assert.equal(reasonAsk.text, noPersonLine);
+  assert.deepEqual(
+    (reasonAsk.actions ?? []).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+  );
+  assert.deepEqual(
+    deskStripActions([{ id: "no-person", role: "fox", text: noPersonLine }], tradeStyleWrite.draft).map(
+      (item) => item.label,
+    ),
+    ["Skip", "Upload this", "Looks right"],
+  );
   const corpTradeLayer = [
     ...headingLayer,
     "Schedule K-1 (Form 1120-S)",
@@ -1422,6 +1452,33 @@ async function main() {
     ["Mary Ann Lee"],
     "a later named person still opens Box 1",
   );
+  const labeledTradeWrite = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+    },
+    readerMap: corpTradeMap,
+  });
+  assert.equal(labeledTradeWrite.draft.pendingProposal, null);
+  assert.ok(labeledTradeWrite.quietLines.some((line) => isK1NoPersonLine(line)));
+  const personAfterTrade = applyExtractedFields(tradeStyleWrite.draft, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+    },
+    readerMap: tradeThenPerson,
+  });
+  assert.equal(personAfterTrade.draft.k1PaperNoPerson, undefined);
+  assert.ok(!personAfterTrade.quietLines.some((line) => isK1NoPersonLine(line)));
+  assert.match(nextFoxAsk(personAfterTrade.draft).text, /K-1 Box 1 is Mary Ann Lee/);
+  assert.match(nextFoxAsk(personAfterTrade.draft).text, /Use this\?$/);
+  assert.equal(personAfterTrade.draft.incomeType.value ?? "", "");
   const responsibleMap = readerMapFromPrintedLines([
     ...headingLayer,
     "Schedule K-1 (Form 1120-S)",

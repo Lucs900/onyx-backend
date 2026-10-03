@@ -1389,6 +1389,17 @@ export function k1Box1PersonCopy(proposal: { value: string; extras?: { field: st
   return `Form 1120-S${where}. K-1 Box 1 is ${name}. Use this?`;
 }
 
+/** The open 1120-S had no named K-1 person. Speech only. Not a write. Not Use this. */
+export function k1NoPersonLine(entity: string): string {
+  const name = String(entity ?? "").replace(/\s+/g, " ").trim();
+  const paper = !name || name === "1120-S" ? "The 1120-S" : `${name}. 1120-S`;
+  return `${paper} is still needed. No person was on the K-1.`;
+}
+
+export function isK1NoPersonLine(text: string): boolean {
+  return /1120-S is still needed\. No person was on the K-1\.$/.test(String(text ?? "").trim());
+}
+
 export function drop1120sReturnPaper(draft: FoxIntakeDraft, entity: string): FoxIntakeDraft {
   const papers = returnPapersOnFile(draft);
   const kept = papers.filter((paper) => !paperIs1120sFor(paper, entity));
@@ -2752,10 +2763,16 @@ export function applyExtractedFields(
         ...next,
         pendingProposal: k1Box1PersonProposal(heldPaper),
         pendingConflict: null,
+        k1PaperNoPerson: undefined,
       };
       conflict = null;
     } else {
-      next = { ...next, pendingProposal: null, pendingConflict: null };
+      next = {
+        ...next,
+        pendingProposal: null,
+        pendingConflict: null,
+        k1PaperNoPerson: heldPaper.entity || "1120-S",
+      };
       conflict = null;
     }
   } else if (!coverReturn || shouldProposeCoverLineIncome(draft, fields, computed)) {
@@ -3168,6 +3185,10 @@ export function applyExtractedFields(
   const cautionDraft = { ...next, facts: cautionFacts };
   const caution = decliningIncomeCaution(cautionDraft) ?? wageIncomeCaution(cautionDraft);
   const quietLines = caution ? [caution] : [];
+  if (next.k1PaperNoPerson) {
+    const reason = k1NoPersonLine(next.k1PaperNoPerson);
+    if (!quietLines.includes(reason)) quietLines.push(reason);
+  }
   if (
     employerMismatchStay(draft, extractClass, fields) &&
     !isStubExtractProposal(next.pendingProposal) &&
