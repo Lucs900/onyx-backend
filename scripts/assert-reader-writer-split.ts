@@ -1,0 +1,2494 @@
+/**
+ * Ticket 73 leftover. Reader map only. Writer after Use this.
+ * Does not write File 38f1b63c. Does not rewrite walker case 72.
+ * Printed lines only — do not invent a founder PDF or an Agfa fixture.
+ */
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { classifyPageByFormHeader } from "../lib/docs/formHeader";
+import {
+  extractClassFromReaderMap,
+  fieldsOnReaderMap,
+  paystubExtractOpens,
+  readerBusinessLines,
+  readerBusinessSpeech,
+  readerMapFromLook,
+  readerMapFromPrintedLines,
+  readerMapNeverOpensStub,
+  readerWageLine,
+  tradeStyleName,
+} from "../lib/docs/readerMap";
+import {
+  applyExtractedFields,
+  docsInDisplayLabels,
+  federalReturnConfirmCopy,
+  PACKET_READING_LINE,
+  PACKET_WAGES_UNREAD_LINE,
+  k1PersonName,
+  isK1NoPersonLine,
+  isOpenPapersFollowLine,
+  returnCardLinesOnFile,
+  taxReturnPacketDoc,
+  hasLockedSuggestion,
+  looksLikePaystubFields,
+} from "../components/fox/fileWrite";
+import { proposalAskCopy, resolveProposal } from "../components/fox/completeness";
+import { applyCapture, applyExtractWrite, emptyDraft, loadIntakeDraft, receiveDocument, startOverWorkspace } from "../components/fox/store";
+import { incomeLedgerFieldsFromPrintedLines } from "../lib/income/ledger";
+import { loudWageFromPrintedLines } from "../lib/docs/printedSample";
+import { classifyAndExtract, shouldReadLater1120sK1Pages } from "../lib/docs/extract";
+import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, linePastReceivedStamp, receivedDropCopy } from "../lib/docs/accept";
+import {
+  deskStripActions,
+  docReactionAsk,
+  nextFoxAsk,
+  previewFacts,
+  statusCopy,
+  workspaceGreeting,
+  workspacePrompt,
+} from "../components/fox/workspace";
+import { freezeUsedFoxTurns, isReturnCardSpeech, sealStoredFoxThread, withoutDuplicateReceivedLine } from "../components/fox/liveCoupon";
+import { waitingOnCopy } from "../components/fox/motion";
+import { readerMapOpensReturnCard } from "../lib/docs/readerMap";
+import { INCOME_BUBBLES } from "../components/fox/types";
+
+const PERSONAL = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "Sichiv Ho",
+  "Vouch Eim Soy",
+  "California wages $96,000",
+  "Shareholder HO & SOY INC",
+  "Agfa Monotype Corporation",
+];
+
+const RETURN_THREE = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Sichiv Ho",
+  "Vouch Eim Soy",
+  "Schedule C",
+  "Vouch Eim Soy",
+  "Schedule E Supplemental Income and Loss",
+  "L&H VENTURES LLC",
+  "partnership",
+  "$60,343 passive",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "S corporation",
+  "26,351",
+  "26,351",
+  "If you did not get a Form W-2, see instructions. Household employee wages not reported on Form(s) W-2  1g  $8,919",
+];
+
+/** IRS line shapes. Amounts sit on the income line, not on the next heading. */
+const FORM_LAYER = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Sichiv Ho",
+  "Vouch Eim Soy",
+  "Schedule C (Form 1040)",
+  "Profit or Loss From Business",
+  "Department of the Treasury",
+  "Internal Revenue Service",
+  "Yes No",
+  "Name of proprietor",
+  "Vouch Eim Soy",
+  "Schedule E (Form 1040)",
+  "Supplemental Income and Loss",
+  "Part II Income or Loss From Partnerships and S Corporations",
+  "L&H VENTURES LLC",
+  "P",
+  "passive income 60,343",
+  "Schedule K-1 (Form 1120-S)",
+  "Shareholder's Share of Income",
+  "HO & SOY INC",
+  "S corporation",
+  "Employer identification number 92-3033949",
+  "1 Ordinary business income (loss) 26,351",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "1 Ordinary business income (loss) 26,351",
+  "If you did not get a Form W-2, see instructions. Household employee wages not reported on Form(s) W-2  1g  $8,919",
+];
+
+/** Headings and nearby dollars. Not the income lines. Must not become a card. */
+const SOUP_LAYER = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Department of the Treasury",
+  "Internal Revenue Service",
+  "VOUCH EIM SOY",
+  "SICHIV HO",
+  "Yes No",
+  "Business income or (loss). Attach Schedule C",
+  "Schedule C (Form 1040)",
+  "Profit or Loss From Business",
+  "Department of the Treasury",
+  "Internal Revenue Service",
+  "Yes No",
+  "Schedule E (Form 1040)",
+  "Supplemental Income and Loss",
+  "L&H VENTURES LLC",
+  "passive",
+  "2,563,436",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "S corporation",
+  "EIN 92-3033949",
+  "3,033,949",
+  "1,545",
+  "8,867",
+  "2,024",
+  "1,040",
+  "8,863",
+  "wages $8,919",
+];
+
+/**
+ * Printed rows from the packet. The income amount is on the entity row and on the
+ * ordinary-income line. A header total and an EIN body are on the page and are not those lines.
+ */
+const ROW_LAYER = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Sichiv Ho",
+  "Schedule C (Form 1040)",
+  "Profit or Loss From Business",
+  "Name of proprietor",
+  "Vouch Eim Soy",
+  "Schedule E (Form 1040)",
+  "Supplemental Income and Loss",
+  "Passive income 2,563,436",
+  "L&H VENTURES LLC P 92-3033949 60,343",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "S corporation",
+  "EIN 92-3033949",
+  "3,033,949",
+  "1 Ordinary business income (loss) 26,351",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "EIN 92-3033949",
+  "1 Ordinary business income (loss)",
+  "26,351",
+];
+
+/** The walked card: form titles joined with and, then the entity and a collapsed wage. */
+const HEADING_AND_WAGE = [
+  "Form 1040",
+  "U.S. Individual Income Tax Return",
+  "2024",
+  "Filing Status",
+  "Standard Deduction",
+  "Digital Assets",
+  "Social Security",
+  "VOUCH EIM SOY",
+  "SICHIV HO",
+  "Yes No",
+  "Internal Revenue Service",
+  "Schedule C (Form 1040)",
+  "Profit or Loss From Business",
+  "Schedule E (Form 1040)",
+  "Supplemental Income and Loss",
+  "L&H VENTURES LLC",
+  "passive",
+  "2,563,436",
+  "Schedule K-1 (Form 1120-S)",
+  "HO & SOY INC",
+  "S corporation",
+  "EIN 92-3033949",
+  "Wages, salaries, tips, etc. Attach Form(s) W-2 8,919",
+];
+
+/** Grouped pdf.js rows. The amount is a later letter line, not the EIN on the name line. */
+const LETTER_ROWS = [
+  "SCHEDULE C Profit or Loss From Business OMB No. 1545-0074",
+  "Name of proprietor Social security number (SSN)",
+  "VOUCH EIM SOY 617-55-6419",
+  "DONUT SHOP 722511",
+  "VOUCH EIM SOY",
+  "13 Depreciation and section 179 expense",
+  "(see instructions) 13 4,289.",
+  "31 Net profit or (loss). Subtract line 30 from line 29.",
+  "enter on Form 1041, line 3. 31 24,457.",
+  "Form 1041, line 3. 32b Some investment",
+  "Part V Other Expenses. List below business expenses not included on lines 8-26, line 27b, or line 30.",
+  "Amortization 2,029.",
+  "48 Total other expenses. Enter here and on line 27a. 48 8,979.",
+  "28 Total expenses before expenses for business use of home. 28 28,876.",
+  "SCHEDULE E Supplemental Income and Loss OMB No. 1545-0074",
+  "Part I Income or Loss From Rental Real Estate and Royalties",
+  "A 242 N ABEL ST, MILPITAS, CA 95035",
+  "A 4 personal use days. Check the QJV box A 365",
+  "2 Multi-Family Residence 4 Commercial 6 Royalties 8 Other (describe)",
+  "3 Rents received. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3 106,404.",
+  "4 Royalties received . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 4",
+  "21 Subtract line 20 from line 3 (rents) and/",
+  "Form 6198. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 74,952.",
+  "Schedule E (Form 1040) 2024 Attachment Sequence No. 13 Page 2",
+  "A L&H VENTURES LLC P 88-2563436",
+  "B HO & SOY INC S 92-3033949 X",
+  "C HO & SOY INC S 92-3033949 X",
+  "(g) Passive loss allowed (h) Passive income (i) Nonpassive loss allowed (j) Section 179 (k) Nonpassive",
+  "A 60,343.",
+  "B 26,351.",
+  "C 26,351.",
+  "29 a Totals. . . . . . . . . . . . . . . . 113,045.",
+  "Schedule K-1 (Form 1041), box 14, code F. See instructions. . . . . . . . . . . . . . . . . . . 42",
+  "Form 7203 S Corporation Shareholder Stock and OMB No. 1545-2302",
+  "HO & SOY INC 92-3033949",
+  "3a Ordinary business income (enter losses in Part III) 3a 26,351.",
+  "Form 8582",
+  "L&H VENTURES LLC 60,343. 60,343.",
+  "HO & SOY INC 26,351. 26,351.",
+  "HO & SOY INC 26,351. 26,351.",
+  "Schedule E, Line 19 - 242 N ABEL ST",
+  "Rent paid to Landlord. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . $ 27,324.",
+  "z Add lines 1a through 1h. . . . . . . . . . . . . 1z 96,000.",
+];
+
+function pdfFromContentStreams(streams: string[]) {
+  const fontId = 3 + streams.length * 2;
+  const kids = streams.map((_, index) => `${3 + index * 2} 0 R`).join(" ");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${kids}] /Count ${streams.length} >>`,
+  ];
+  streams.forEach((stream, index) => {
+    const pageId = 3 + index * 2;
+    const contentId = pageId + 1;
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`,
+    );
+    objects.push(`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`);
+  });
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const chunks: Buffer[] = [Buffer.from("%PDF-1.4\n")];
+  const offsets = [0];
+  objects.forEach((body, index) => {
+    offsets.push(chunks.reduce((sum, part) => sum + part.length, 0));
+    chunks.push(Buffer.from(`${index + 1} 0 obj\n${body}\nendobj\n`));
+  });
+  const xrefAt = chunks.reduce((sum, part) => sum + part.length, 0);
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) {
+    xref += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  chunks.push(Buffer.from(xref));
+  chunks.push(
+    Buffer.from(`trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xrefAt}\n%%EOF\n`),
+  );
+  return new Uint8Array(Buffer.concat(chunks));
+}
+
+/** Helvetica pages from the leftover lines. Not a founder PDF stand-in. */
+function printedReturnPdf(linesOrPages: readonly string[] | readonly (readonly string[])[]) {
+  const pages =
+    linesOrPages.length > 0 && Array.isArray(linesOrPages[0])
+      ? (linesOrPages as readonly (readonly string[])[])
+      : [linesOrPages as readonly string[]];
+  const streams = pages.map((lines) => {
+    const commands = ["BT", "/F1 12 Tf", "72 720 Td"];
+    for (const [index, line] of lines.entries()) {
+      if (index) commands.push("0 -18 Td");
+      commands.push(`(${line.replace(/[()\\]/g, "\\$&")}) Tj`);
+    }
+    commands.push("ET");
+    return commands.join("\n");
+  });
+  return pdfFromContentStreams(streams);
+}
+
+/**
+ * Separate text objects. Not the guest packet, and not a line that already
+ * contains the name and the amount. The amount baseline is 3.2pt under the
+ * name. A 2pt row break leaves that amount on its own line.
+ */
+function positionedGlyphPdf(items: readonly { text: string; x: number; y: number }[]) {
+  const commands = ["BT", "/F1 9 Tf"];
+  for (const item of items) {
+    commands.push(`1 0 0 1 ${item.x} ${item.y} Tm`);
+    commands.push(`(${item.text.replace(/[()\\]/g, "\\$&")}) Tj`);
+  }
+  commands.push("ET");
+  return pdfFromContentStreams([commands.join("\n")]);
+}
+
+/** Same Grok look as live. Names-only + 1g. Not the three-business card. */
+const garbledLook = {
+  async read() {
+    return {
+      extractClass: "tax_return" as const,
+      confidence: 0.94,
+      fields: {
+        tax_year: "2024",
+        full_name: "SICHIY HO AND VOUCH EIM SOY",
+        entity_name: "L&H VENTURES LLC",
+        wages: "8919",
+      },
+      warnings: [],
+      readerMap: {
+        forms: ["1040" as const],
+        names: ["SICHIY HO AND VOUCH EIM SOY"],
+        entities: ["L&H VENTURES LLC"],
+        lines: [{ kind: "wages", value: "8919", label: "If you did not g Wages from Form , line 6 … 1g" }],
+        missing: [],
+      },
+    };
+  },
+  async classify() {
+    return { class: "tax_return" as const, confidence: 0.94, readable: true };
+  },
+  async extract() {
+    return {
+      fields: {
+        tax_year: "2024",
+        full_name: "SICHIY HO AND VOUCH EIM SOY",
+        wages: "8919",
+      },
+      warnings: [],
+    };
+  },
+};
+
+/** Names-only look. Does not open the card. The text layer has to. */
+const namesOnlyLook = {
+  async read() {
+    return {
+      extractClass: "tax_return" as const,
+      confidence: 0.94,
+      fields: {
+        tax_year: "2024",
+        full_name: "SICHIY HO AND VOUCH EIM SOY",
+      },
+      warnings: [],
+      readerMap: {
+        forms: ["1040" as const],
+        names: ["SICHIY HO AND VOUCH EIM SOY"],
+        entities: [] as string[],
+        lines: [] as { kind: string; value: string; label?: string }[],
+        missing: [],
+      },
+    };
+  },
+  async classify() {
+    return { class: "tax_return" as const, confidence: 0.94, readable: true };
+  },
+  async extract() {
+    return {
+      fields: {
+        tax_year: "2024",
+        full_name: "SICHIY HO AND VOUCH EIM SOY",
+      },
+      warnings: [],
+    };
+  },
+};
+
+function looksRightDraft() {
+  return {
+    ...emptyDraft(),
+    path: "acr" as const,
+    productIntent: "buy" as const,
+    workspaceFlow: true,
+    sampleAccepted: true,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "w2" as const, confirmed: true },
+  };
+}
+
+async function main() {
+  const map = readerMapFromPrintedLines(PERSONAL);
+  assert.ok(map.forms.includes("1040"), `forms ${map.forms.join(",")}`);
+  assert.ok(map.names.some((name) => /Sichiv Ho/i.test(name)), `names ${map.names.join(" · ")}`);
+  assert.ok(map.names.some((name) => /Vouch Eim Soy/i.test(name)), `names ${map.names.join(" · ")}`);
+  assert.ok(map.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)), `entities ${map.entities.join(" · ")}`);
+  assert.ok(map.lines.some((line) => line.kind === "wages" && line.value === "96000"));
+  assert.ok(map.missing.includes("employer"));
+  assert.ok(map.missing.includes("pay_period"));
+  assert.ok(map.missing.includes("period_gross"));
+  assert.equal(readerMapNeverOpensStub(map), true);
+  assert.equal(readerMapOpensReturnCard(map), true);
+  assert.equal(extractClassFromReaderMap(map), "tax_return");
+  assert.equal(loudWageFromPrintedLines(PERSONAL), null);
+  assert.doesNotMatch(JSON.stringify(map), /Agfa|Monotype/i);
+
+  const lookOnly = readerMapFromLook(
+    {
+      forms: ["1040"],
+      names: ["Sichiv Ho"],
+      entities: ["HO & SOY INC", "L&H VENTURES LLC"],
+      lines: [
+        { kind: "k1", value: "26351", label: "HO & SOY INC · S corp" },
+        { kind: "k1", value: "26351", label: "HO & SOY INC · S corp" },
+        { kind: "schedule_e", value: "60343", label: "L&H VENTURES LLC · partnership · passive" },
+      ],
+    },
+    null,
+  );
+  assert.equal(
+    readerBusinessLines(lookOnly).filter((line) => line.kind === "k1" && line.value === "26351").length,
+    2,
+    "look path without printed still keeps both K-1 lines",
+  );
+  assert.equal(
+    readerBusinessLines(lookOnly).filter((line) => line.kind === "schedule_e" && line.value === "26351").length,
+    0,
+  );
+
+  const formMap = readerMapFromPrintedLines(FORM_LAYER);
+  const formBusinesses = readerBusinessLines(formMap);
+  assert.equal(
+    formBusinesses.filter((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)).length,
+    1,
+  );
+  assert.equal(
+    formBusinesses.filter((line) => line.kind === "schedule_c").length,
+    1,
+    `chrome is not a Schedule C — ${JSON.stringify(formBusinesses)}`,
+  );
+  assert.ok(
+    formBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `form layer schedule e ${JSON.stringify(formBusinesses)}`,
+  );
+  assert.equal(
+    formBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `form layer keeps both ordinary K-1 lines ${JSON.stringify(formBusinesses)}`,
+  );
+  const rowMap = readerMapFromPrintedLines(ROW_LAYER);
+  const rowBusinesses = readerBusinessLines(rowMap);
+  assert.equal(
+    rowBusinesses.filter((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)).length,
+    1,
+    `row schedule c ${JSON.stringify(rowBusinesses)}`,
+  );
+  assert.ok(
+    rowBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `row schedule e keeps the entity amount ${JSON.stringify(rowBusinesses)}`,
+  );
+  assert.equal(
+    rowBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "2563436").length,
+    0,
+    "a passive header total is not the Schedule E line",
+  );
+  assert.equal(
+    rowBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `row keeps both ordinary K-1 lines ${JSON.stringify(rowBusinesses)}`,
+  );
+  assert.equal(
+    rowBusinesses.filter((line) => line.value === "3033949").length,
+    0,
+    "an EIN body is not a K-1 line",
+  );
+  assert.equal(readerMapOpensReturnCard(rowMap), true);
+  assert.equal(readerWageLine(formMap), null);
+  assert.ok(!formMap.names.some((item) => /internal revenue|yes no/i.test(item)));
+  assert.equal(readerMapOpensReturnCard(formMap), true);
+
+  const soupMap = readerMapFromPrintedLines(SOUP_LAYER);
+  const soupBusinesses = readerBusinessLines(soupMap);
+  assert.equal(soupBusinesses.length, 0, `a heading soup is not a read — ${JSON.stringify(soupBusinesses)}`);
+  assert.equal(readerWageLine(soupMap), null, "a bare wages line is not a wage to offer");
+  assert.equal(readerMapOpensReturnCard(soupMap), false, "a soup must not keep Use this");
+  assert.ok(!soupMap.names.some((item) => /internal revenue|yes no/i.test(item)));
+  assert.doesNotMatch(JSON.stringify(soupMap), /2563436|3033949|8919|1545|8867|8863/);
+
+  assert.equal(paystubExtractOpens({ employer_name: "Harbor Cafe" }), false);
+  assert.equal(paystubExtractOpens({ employer_name: "Harbor Cafe", gross_period: "400" }), false);
+  assert.equal(
+    paystubExtractOpens({
+      employer_name: "Harbor Cafe",
+      pay_period_end: "2026-07-31",
+      gross_period: "400",
+    }),
+    true,
+  );
+  assert.equal(
+    paystubExtractOpens({
+      employer_name: "Agfa Monotype Corporation",
+      pay_period_end: "2026-07-31",
+      gross_period: "400",
+    }),
+    false,
+  );
+  assert.equal(hasLockedSuggestion("paystub", { employer_name: "Harbor Cafe" }), false);
+  assert.equal(looksLikePaystubFields({ employer_name: "Harbor Cafe", gross_period: "400" }), false);
+  assert.equal(
+    fieldsOnReaderMap(
+      {
+        employer_name: "Alameda Health System",
+        pay_period_end: "08/15/2026",
+        gross_period: "16824.30",
+      },
+      {
+        forms: ["paystub"],
+        names: ["ALAMEDA HEALTH SYSTEM"],
+        entities: [],
+        lines: [{ kind: "wages", value: "225.80", label: "Total Gross" }],
+        missing: [],
+      },
+    ).gross_period,
+    "16824.30",
+    "stub period gross stays; a wages line is not the period",
+  );
+
+  assert.equal(classifyPageByFormHeader("Form 8879 IRS e-file Signature Authorization"), "form_8879");
+  assert.equal(
+    classifyPageByFormHeader("Form 540 California Resident Income Tax Return Sichiv Ho"),
+    "form_540",
+  );
+  assert.equal(
+    classifyPageByFormHeader("Form 7203 S Corporation Shareholder Stock and Debt Basis Limitations"),
+    "form_7203",
+  );
+  assert.equal(
+    classifyPageByFormHeader("Schedule K-1 (Form 1120-S) Shareholder's Share HO & SOY INC"),
+    "k1",
+  );
+  for (const page of [
+    ["Form 8879", "IRS e-file Signature Authorization", "Sichiv Ho"],
+    ["Form 540", "California Resident Income Tax Return", "Sichiv Ho"],
+    ["Form 7203", "S Corporation Shareholder Stock and Debt Basis Limitations"],
+    ["Schedule K-1 (Form 1120-S)", "Shareholder's Share", "HO & SOY INC"],
+  ]) {
+    const next = readerMapFromPrintedLines(page);
+    assert.equal(readerMapNeverOpensStub(next), true, `never stub ${page[0]}`);
+    assert.notEqual(extractClassFromReaderMap(next), "paystub");
+    assert.equal(loudWageFromPrintedLines(page), null);
+  }
+
+  const receivedAt = "2026-09-30T04:00:00.000Z";
+  const name = "Sichiv Vouch 2024 personal.pdf";
+  loadIntakeDraft({
+    ...looksRightDraft(),
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 12000,
+        receivedAt,
+        status: "received",
+      },
+    ],
+  });
+  const beforeUse = applyExtractWrite(receivedAt, name, {
+    extractClass: "paystub",
+    confidence: 0.9,
+    fields: { employer_name: "Agfa Monotype Corporation", wages: "8919" },
+    readerMap: map,
+  });
+  assert.equal(beforeUse.draft.facts?.employer_name, undefined);
+  assert.equal(beforeUse.draft.facts?.wages, undefined, "invented wages do not write before Use this");
+  assert.doesNotMatch(JSON.stringify(beforeUse.draft.pendingProposal ?? {}), /Agfa|Monotype|8,919|8919/i);
+  assert.ok(
+    !docsInDisplayLabels(beforeUse.draft).includes("Paystubs in"),
+    `reader must not stamp Paystubs in — ${docsInDisplayLabels(beforeUse.draft).join(" · ")}`,
+  );
+  const liveCard = proposalAskCopy(beforeUse.draft.pendingProposal);
+  assert.match(liveCard, /HO\s*&\s*SOY INC/i, `reader map must come back as a card — ${liveCard}`);
+  assert.match(liveCard, /96,000/, `card must offer the on-page wage — ${liveCard}`);
+  assert.doesNotMatch(liveCard, /8,919|8919/);
+  assert.deepEqual(
+    (nextFoxAsk(beforeUse.draft).actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  const payBefore = previewFacts(beforeUse.draft).find((fact) => fact.id === "pay" || fact.label === "Pay");
+  assert.ok(
+    !payBefore || !/8,919|8919/.test(payBefore.value),
+    `pad must not write Pay · Wages $8,919 — ${payBefore?.value ?? "none"}`,
+  );
+
+  const skippedLive = resolveProposal(beforeUse.draft, "decline");
+  assert.equal(skippedLive.facts?.wages, undefined);
+  assert.equal(skippedLive.facts?.entity_name, undefined);
+  assert.equal(skippedLive.facts?.tax_year, undefined);
+  assert.ok(!docsInDisplayLabels(skippedLive).includes("Paystubs in"));
+  assert.ok(!docsInDisplayLabels(skippedLive).includes("Tax return in"));
+
+  const emptyFieldsMap = applyExtractedFields(looksRightDraft(), {
+    extractClass: "w2",
+    confidence: 0.5,
+    fields: { wages: "8919" },
+    readerMap: map,
+  });
+  assert.equal(emptyFieldsMap.draft.facts?.wages, undefined);
+  const emptyMapCard = proposalAskCopy(emptyFieldsMap.draft.pendingProposal);
+  assert.match(emptyMapCard, /HO\s*&\s*SOY INC/i, `map-only extract is still a card — ${emptyMapCard}`);
+  assert.match(emptyMapCard, /96,000/);
+  assert.doesNotMatch(emptyMapCard, /8,919|8919/);
+  assert.deepEqual(
+    (nextFoxAsk(emptyFieldsMap.draft).actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+
+  const receivedOnly = {
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other" as const,
+        name,
+        type: "application/pdf",
+        size: 12000,
+        receivedAt,
+        status: "received" as const,
+      },
+    ],
+  };
+  assert.equal(workspacePrompt(receivedOnly), "intent", "received without extract is not the card");
+  assert.doesNotMatch(nextFoxAsk(receivedOnly).text, /Schedule C under Vouch Eim Soy/i);
+  assert.doesNotMatch(nextFoxAsk(receivedOnly).text, /HO\s*&\s*SOY/i);
+
+  const rowExtract = await classifyAndExtract(
+    printedReturnPdf(ROW_LAYER),
+    "application/pdf",
+    namesOnlyLook,
+    null,
+    name,
+  );
+  assert.notEqual(rowExtract.failed, true, "a row with the income lines is not a failed read");
+  assert.ok(!(rowExtract.warnings ?? []).includes("unmapped-text"));
+  assert.ok(!(rowExtract.warnings ?? []).includes("no-text-layer"));
+  const rowExtracted = readerBusinessLines(rowExtract.readerMap);
+  assert.ok(
+    rowExtracted.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `extract row schedule c ${JSON.stringify(rowExtracted)}`,
+  );
+  assert.ok(
+    rowExtracted.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `extract row schedule e ${JSON.stringify(rowExtracted)}`,
+  );
+  assert.equal(
+    rowExtracted.filter((line) => line.kind === "k1" && line.value === "26351").length,
+    2,
+    `extract row keeps both K-1 lines ${JSON.stringify(rowExtracted)}`,
+  );
+  assert.equal(rowExtracted.some((line) => line.value === "2563436" || line.value === "3033949"), false);
+  const rowAt = "2026-09-30T04:09:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: rowAt,
+        status: "received",
+      },
+    ],
+  });
+  const rowWrite = applyExtractWrite(
+    rowAt,
+    name,
+    {
+      extractClass: rowExtract.extractClass,
+      confidence: rowExtract.confidence,
+      fields: rowExtract.fields,
+      readerMap: rowExtract.readerMap,
+    },
+    undefined,
+    false,
+  );
+  const rowAsk = rowWrite.draft.pendingProposal ? proposalAskCopy(rowWrite.draft.pendingProposal) : "";
+  assert.match(rowAsk, /Schedule C under Vouch Eim Soy/i);
+  assert.match(rowAsk, /L&H VENTURES LLC/);
+  assert.match(rowAsk, /60,343/);
+  assert.match(rowAsk, /HO\s*&\s*SOY INC/);
+  assert.match(rowAsk, /26,351/);
+  assert.doesNotMatch(rowAsk, /2,563,436|3,033,949/);
+  assert.match(rowAsk, /Use this/);
+  assert.ok(!rowWrite.draft.incomeType.value);
+
+  // Not the guest packet. Each cell is its own text object. The income amount
+  // sits 3.2pt under the name, which a 2pt break leaves off the entity row.
+  const splitRow = positionedGlyphPdf([
+    { text: "Form 1040", x: 36, y: 740 },
+    { text: "U.S. Individual Income Tax Return", x: 140, y: 740 },
+    { text: "2024", x: 420, y: 720 },
+    { text: "Schedule C (Form 1040)", x: 36, y: 690 },
+    { text: "Name of proprietor", x: 36, y: 676 },
+    { text: "Vouch Eim Soy", x: 36, y: 662 },
+    { text: "Schedule E (Form 1040)", x: 36, y: 630 },
+    { text: "Supplemental Income and Loss", x: 190, y: 627.4 },
+    { text: "Passive income", x: 180, y: 600 },
+    { text: "2,563,436", x: 420, y: 600 },
+    { text: "L&H VENTURES LLC", x: 72, y: 588 },
+    { text: "P", x: 230, y: 588 },
+    { text: "92-3033949", x: 260, y: 588 },
+    { text: "60,343", x: 430, y: 584.8 },
+    { text: "Schedule K-1 (Form 1120-S)", x: 36, y: 540 },
+    { text: "HO & SOY INC", x: 72, y: 516 },
+    { text: "S corporation", x: 220, y: 516 },
+    { text: "92-3033949", x: 330, y: 516 },
+    { text: "3,033,949", x: 460, y: 504 },
+    { text: "1", x: 36, y: 492 },
+    { text: "Ordinary business income (loss)", x: 52, y: 492 },
+    { text: "26,351", x: 430, y: 488.8 },
+    { text: "Schedule K-1 (Form 1120-S)", x: 36, y: 450 },
+    { text: "HO & SOY INC", x: 72, y: 426 },
+    { text: "92-3033949", x: 330, y: 426 },
+    { text: "1", x: 36, y: 402 },
+    { text: "Ordinary business income (loss)", x: 52, y: 402 },
+    { text: "26,351", x: 430, y: 398.8 },
+  ]);
+  const splitExtract = await classifyAndExtract(splitRow, "application/pdf", namesOnlyLook, null, name);
+  assert.notEqual(splitExtract.failed, true, "a split baseline with the income amounts is not a failed read");
+  assert.ok(!(splitExtract.warnings ?? []).includes("unmapped-text"));
+  const splitBusinesses = readerBusinessLines(splitExtract.readerMap);
+  assert.ok(
+    splitBusinesses.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `split row schedule c ${JSON.stringify(splitBusinesses)}`,
+  );
+  assert.ok(
+    splitBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `split row schedule e ${JSON.stringify(splitBusinesses)}`,
+  );
+  assert.equal(
+    splitBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `split row keeps both K-1 lines ${JSON.stringify(splitBusinesses)}`,
+  );
+  assert.equal(splitBusinesses.some((line) => line.value === "2563436" || line.value === "3033949"), false);
+  const splitAt = "2026-09-30T04:10:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: splitAt,
+        status: "received",
+      },
+    ],
+  });
+  const splitWrite = applyExtractWrite(
+    splitAt,
+    name,
+    {
+      extractClass: splitExtract.extractClass,
+      confidence: splitExtract.confidence,
+      fields: splitExtract.fields,
+      readerMap: splitExtract.readerMap,
+    },
+    undefined,
+    false,
+  );
+  const splitAsk = splitWrite.draft.pendingProposal ? proposalAskCopy(splitWrite.draft.pendingProposal) : "";
+  assert.match(splitAsk, /Schedule C under Vouch Eim Soy/i);
+  assert.match(splitAsk, /L&H VENTURES LLC/);
+  assert.match(splitAsk, /60,343/);
+  assert.match(splitAsk, /26,351/);
+  assert.doesNotMatch(splitAsk, /2,563,436|3,033,949|8,919/);
+  assert.match(splitAsk, /Use this/);
+  assert.ok(!splitWrite.draft.incomeType.value);
+
+  const blankPdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
+  const blankLook = {
+    async read() {
+      return {
+        extractClass: "other" as const,
+        confidence: 0.2,
+        fields: {
+          tax_year: "2024",
+          full_name: "SICHIY HO AND VOUCH EIM SOY",
+        },
+        warnings: ["failed"],
+        failed: true,
+        readerMap: {
+          forms: ["1040" as const],
+          names: ["SICHIY HO AND VOUCH EIM SOY"],
+          entities: [] as string[],
+          lines: [] as { kind: string; value: string; label?: string }[],
+          missing: [],
+        },
+      };
+    },
+    async classify() {
+      return { class: "other" as const, confidence: 0.2, readable: true };
+    },
+    async extract() {
+      return { fields: {}, warnings: ["failed"] };
+    },
+  };
+  const blankExtract = await classifyAndExtract(
+    blankPdf,
+    "application/pdf",
+    blankLook,
+    null,
+    "blank.pdf",
+  );
+  assert.equal(
+    readerMapOpensReturnCard(blankExtract.readerMap),
+    false,
+    "a names-only look on a blank PDF must not invent the three-business card",
+  );
+  assert.equal(
+    readerBusinessLines(blankExtract.readerMap).filter((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)).length,
+    0,
+  );
+  assert.equal(
+    readerBusinessLines(blankExtract.readerMap).filter((line) => line.kind === "schedule_e" && line.value === "60343").length,
+    0,
+  );
+  assert.equal(
+    readerBusinessLines(blankExtract.readerMap).filter((line) => line.kind === "k1" && line.value === "26351").length,
+    0,
+    "blank look must not hand both K-1 lines",
+  );
+
+  const dropped = printedReturnPdf(RETURN_THREE);
+  assert.equal(
+    readerMapOpensReturnCard(readerMapFromLook({
+      forms: ["1040"],
+      names: ["SICHIY HO AND VOUCH EIM SOY"],
+      entities: [],
+      lines: [],
+    })),
+    false,
+    "names-only look does not open the card",
+  );
+  const extracted = await classifyAndExtract(
+    dropped,
+    "application/pdf",
+    namesOnlyLook,
+    null,
+    name,
+  );
+  assert.notEqual(extracted.failed, true, "a real return drop is not unread");
+  assert.equal(extracted.extractClass, "tax_return");
+  assert.equal(readerMapOpensReturnCard(extracted.readerMap), true, "extract must open the card from the page");
+  const extractedBusinesses = readerBusinessLines(extracted.readerMap);
+  assert.ok(
+    extractedBusinesses.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `extract schedule c ${JSON.stringify(extractedBusinesses)}`,
+  );
+  assert.ok(
+    extractedBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `extract schedule e ${JSON.stringify(extractedBusinesses)}`,
+  );
+  assert.equal(
+    extractedBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `extract keeps both K-1 lines ${JSON.stringify(extractedBusinesses)}`,
+  );
+  const thinFace = [
+    "Form 1040",
+    "U.S. Individual Income Tax Return",
+    "2024",
+    "Electronic filing cover sheet only",
+  ];
+  const laterPacket = printedReturnPdf([thinFace, thinFace, thinFace, RETURN_THREE]);
+  const later = await classifyAndExtract(laterPacket, "application/pdf", namesOnlyLook, null, name);
+  assert.notEqual(later.failed, true, "schedules past the first three pages are still the pdf.js card");
+  assert.equal(readerMapOpensReturnCard(later.readerMap), true);
+  const laterBusinesses = readerBusinessLines(later.readerMap);
+  assert.ok(
+    laterBusinesses.some((line) => line.kind === "schedule_c" && /Vouch Eim Soy/i.test(line.value)),
+    `later page schedule c ${JSON.stringify(laterBusinesses)}`,
+  );
+  assert.ok(
+    laterBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `later page schedule e ${JSON.stringify(laterBusinesses)}`,
+  );
+  assert.equal(
+    laterBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `later page keeps both K-1 lines ${JSON.stringify(laterBusinesses)}`,
+  );
+  const laterAt = "2026-09-30T04:05:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: laterPacket.byteLength,
+        receivedAt: laterAt,
+        status: "received",
+      },
+    ],
+  });
+  const laterGuest = applyExtractWrite(laterAt, name, {
+    extractClass: later.extractClass,
+    confidence: later.confidence,
+    fields: later.fields,
+    readerMap: later.readerMap,
+  });
+  assert.ok(!laterGuest.draft.path, "guest /start has no path yet");
+  assert.equal(workspacePrompt(laterGuest.draft), "confirm-proposal");
+  assert.notEqual(laterGuest.draft.incomeType.value, "both");
+  assert.ok(!laterGuest.draft.incomeType.value, "Income stays empty until the borrower chooses");
+  const laterAsk = nextFoxAsk(laterGuest.draft);
+  assert.doesNotMatch(laterAsk.text, /received/i, "a later-page return drop is the card, not a received line");
+  assert.match(laterAsk.text, /Schedule C under Vouch Eim Soy/i);
+  assert.match(laterAsk.text, /L&H VENTURES LLC/i);
+  assert.match(laterAsk.text, /60,343/);
+  assert.match(laterAsk.text, /HO\s*&\s*SOY INC/i);
+  assert.match(laterAsk.text, /26,351/);
+  assert.deepEqual(
+    (laterAsk.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  const laterPad = previewFacts(laterGuest.draft);
+  assert.ok(!laterPad.some((fact) => fact.id === "income" || fact.label === "Income"));
+  startOverWorkspace("acr");
+  const acrAt = "2026-09-30T04:05:30.000Z";
+  receiveDocument({
+    slot: "other",
+    name,
+    type: "application/pdf",
+    size: laterPacket.byteLength,
+    receivedAt: acrAt,
+  });
+  const acrGuest = applyExtractWrite(acrAt, name, {
+    extractClass: later.extractClass,
+    confidence: later.confidence,
+    fields: later.fields,
+    readerMap: later.readerMap,
+  });
+  const acrAsk = docReactionAsk(acrGuest.draft, "tax_return") ?? nextFoxAsk(acrGuest.draft);
+  const acrLine = linePastReceivedStamp({
+    lastRole: "system",
+    lastText: receivedDropCopy(name),
+    receivedName: name,
+    cardText: acrAsk.text,
+  });
+  assert.ok(acrLine, "Start over must not leave the received stamp as the last line");
+  assert.doesNotMatch(acrLine ?? "", /· received/i);
+  assert.match(acrLine ?? "", /Schedule C under Vouch Eim Soy/i);
+  assert.match(acrLine ?? "", /L&H VENTURES LLC/i);
+  assert.match(acrLine ?? "", /60,343/);
+  assert.match(acrLine ?? "", /HO\s*&\s*SOY INC/i);
+  assert.match(acrLine ?? "", /26,351/);
+  assert.notEqual(acrGuest.draft.incomeType.value, "both");
+  assert.ok(!acrGuest.draft.incomeType.value);
+  assert.equal(statusCopy(acrGuest.draft), "needs_you");
+  assert.equal(waitingOnCopy(acrGuest.draft), "borrower");
+  const thinPacket = printedReturnPdf([thinFace, thinFace, thinFace]);
+  const thinNamed = await classifyAndExtract(thinPacket, "application/pdf", namesOnlyLook, null, "thin-face.pdf");
+  const thinNamedBusinesses = readerBusinessLines(thinNamed.readerMap);
+  assert.equal(thinNamedBusinesses.filter((line) => line.kind === "schedule_c").length, 0);
+  assert.equal(
+    thinNamedBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "60343").length,
+    0,
+  );
+  assert.equal(thinNamedBusinesses.filter((line) => line.kind === "k1" && line.value === "26351").length, 0);
+  const emptyLook = {
+    async read() {
+      return {
+        extractClass: "other" as const,
+        confidence: 0.2,
+        fields: {},
+        warnings: ["failed"],
+        failed: true,
+      };
+    },
+    async classify() {
+      return { class: "other" as const, confidence: 0.2, readable: false };
+    },
+    async extract() {
+      return { fields: {}, warnings: ["failed"] };
+    },
+  };
+  const thin = await classifyAndExtract(thinPacket, "application/pdf", emptyLook, null, "thin-face.pdf");
+  assert.equal(thin.failed, true, "a short text layer with no lock is not a return card");
+  assert.ok((thin.warnings ?? []).includes("unmapped-text"), "text that did not map is not an empty layer");
+  assert.ok(!(thin.warnings ?? []).includes("no-text-layer"));
+  assert.equal(readerMapOpensReturnCard(thin.readerMap), false);
+  const thinBusinesses = readerBusinessLines(thin.readerMap);
+  assert.equal(thinBusinesses.filter((line) => line.kind === "schedule_c").length, 0);
+  assert.equal(thinBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "60343").length, 0);
+  assert.equal(thinBusinesses.filter((line) => line.kind === "k1" && line.value === "26351").length, 0);
+  const unreadFace = await classifyAndExtract(thinPacket, "application/pdf", namesOnlyLook, null, name);
+  assert.equal(unreadFace.failed, true, "a personal.pdf layer without the schedule lines is not a names-only card");
+  assert.ok((unreadFace.warnings ?? []).includes("unmapped-text"));
+  assert.ok(!(unreadFace.warnings ?? []).includes("no-text-layer"));
+  assert.equal(readerMapOpensReturnCard(unreadFace.readerMap), false);
+  const unreadAt = "2026-09-30T04:06:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: thinPacket.byteLength,
+        receivedAt: unreadAt,
+        status: "received",
+      },
+    ],
+  });
+  const unreadWrite = applyExtractWrite(
+    unreadAt,
+    name,
+    {
+      extractClass: unreadFace.extractClass,
+      confidence: unreadFace.confidence,
+      fields: unreadFace.fields,
+      readerMap: unreadFace.readerMap,
+    },
+    FAILED_READ_NOTE,
+    true,
+  );
+  assert.ok(!unreadWrite.draft.pendingProposal, "layer failure must not leave a names-only Use this");
+  assert.ok(unreadWrite.quietLines.includes(FAILED_READ_NOTE));
+  assert.equal(
+    unreadWrite.quietLines.filter((line) => line === FAILED_READ_NOTE).length,
+    1,
+    "the failed read is one line",
+  );
+  assert.ok(!unreadWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
+  assert.ok(!unreadWrite.draft.incomeType.value);
+  const unreadLine = unreadWrite.quietLines.find((line) => line === FAILED_READ_NOTE) ?? "";
+  assert.equal(unreadLine, FAILED_READ_NOTE, "text without the income lines is a failed read");
+  assert.doesNotMatch(unreadLine, /no text layer/i);
+  const soupPacket = printedReturnPdf(SOUP_LAYER);
+  const soupExtract = await classifyAndExtract(soupPacket, "application/pdf", namesOnlyLook, null, name);
+  assert.equal(soupExtract.failed, true, "a names-and-numbers soup is not a return card");
+  assert.ok((soupExtract.warnings ?? []).includes("unmapped-text"));
+  assert.ok(!(soupExtract.warnings ?? []).includes("no-text-layer"));
+  assert.equal(readerMapOpensReturnCard(soupExtract.readerMap), false);
+  assert.equal(readerBusinessLines(soupExtract.readerMap).length, 0);
+  const soupAt = "2026-09-30T04:07:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: soupPacket.byteLength,
+        receivedAt: soupAt,
+        status: "received",
+      },
+    ],
+  });
+  const soupWrite = applyExtractWrite(
+    soupAt,
+    name,
+    {
+      extractClass: soupExtract.extractClass,
+      confidence: soupExtract.confidence,
+      fields: soupExtract.fields,
+      readerMap: soupExtract.readerMap,
+    },
+    FAILED_READ_NOTE,
+    true,
+  );
+  assert.ok(!soupWrite.draft.pendingProposal, "a soup must not keep Use this");
+  assert.ok(soupWrite.quietLines.includes(FAILED_READ_NOTE));
+  assert.ok(!soupWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
+  const soupLine = soupWrite.quietLines.find((line) => line === FAILED_READ_NOTE) ?? "";
+  assert.equal(soupLine, FAILED_READ_NOTE, "a soup with text is a failed read");
+  assert.doesNotMatch(
+    soupWrite.draft.pendingProposal ? proposalAskCopy(soupWrite.draft.pendingProposal) : soupLine ?? "",
+    /2,563,436|3,033,949|8,919|Internal Revenue|Yes No/,
+  );
+  const headingMap = readerMapFromPrintedLines(HEADING_AND_WAGE);
+  assert.ok(!headingMap.names.some((item) => /filing status|standard deduction|digital assets|social security|internal revenue|yes no/i.test(item)));
+  assert.equal(readerWageLine(headingMap), null, "a collapsed wages label is not a wage to offer");
+  assert.equal(readerBusinessLines(headingMap).length, 0);
+  assert.equal(readerMapOpensReturnCard(headingMap), false, "entity plus wages must not open Use this");
+  const letterMap = readerMapFromPrintedLines(LETTER_ROWS);
+  const letterSpoken = readerBusinessLines(letterMap).map((line) => readerBusinessSpeech(line));
+  assert.deepEqual(letterSpoken, [
+    "Schedule C · VOUCH EIM SOY · donut shop · net $24,457 · amortization $2,029 · depreciation $4,289",
+    "Schedule E · 242 N ABEL ST, MILPITAS, CA 95035 · Commercial · Rents received $106,404 · Net $74,952 · Rent paid to Landlord $27,324",
+    "Schedule E · L&H VENTURES LLC · partnership · passive · $60,343",
+    "HO & SOY INC · S corp · $26,351",
+    "HO & SOY INC · S corp · $26,351",
+  ]);
+  assert.doesNotMatch(letterSpoken.join(" "), /own/i);
+  assert.equal(readerWageLine(letterMap), null);
+  assert.equal(readerMapOpensReturnCard(letterMap), true);
+  assert.ok(letterSpoken.every((line) => !/2,563,436|3,033,949|8,919|113,045|92-3033949/.test(line)));
+  const line1z = incomeLedgerFieldsFromPrintedLines([
+    "Form 1040",
+    "U.S. Individual Income Tax Return",
+    "1 a Total amount from Form(s) W-2, box 1 1a 96,000.",
+    "z Add lines 1a through 1h. . . . . . . . . . . . . 1z 96,000.",
+  ]);
+  assert.equal(line1z.wages, "96000", "Form 1040 line 1z is the wage amount");
+  const through1y = incomeLedgerFieldsFromPrintedLines([
+    "z Add lines 1a through 1y . . . . . . 1z 11,933.",
+  ]);
+  assert.equal(through1y.wages, undefined);
+  const caFace = incomeLedgerFieldsFromPrintedLines([
+    "z Add line 1a through line 1i. . . . . . 1z > 96,000.",
+  ]);
+  assert.equal(caFace.wages, undefined);
+  const letterWrite = applyExtractedFields(
+    {
+      ...emptyDraft(),
+      workspaceFlow: true,
+      documents: [
+        {
+          slot: "other",
+          name,
+          type: "application/pdf",
+          size: 1,
+          receivedAt,
+          status: "received",
+        },
+      ],
+    },
+    {
+      extractClass: "tax_return",
+      confidence: 0.94,
+      fields: { tax_year: "2024", full_name: "VOUCH EIM SOY and SICHIV HO" },
+      readerMap: letterMap,
+    },
+  );
+  const letterCard = proposalAskCopy(letterWrite.draft.pendingProposal);
+  const letterSkip = resolveProposal(letterWrite.draft, "decline");
+  assert.equal(returnCardLinesOnFile(letterSkip).length, 0, "Skip leaves the spoken lines off File");
+  assert.equal(letterSkip.incomeType.value ?? "", "");
+  assert.ok(
+    !previewFacts(letterSkip).some((fact) => /60,343|26,351|106,404|74,952|27,324|92-3033949|96,000|Still needed/.test(`${fact.label} ${fact.value}`)),
+    "Skip leaves the pad empty of the return lines",
+  );
+  assert.ok(
+    !previewFacts(letterWrite.draft).some((fact) => fact.label === "Still needed" || /96,000/.test(fact.value)),
+    "the pad stays empty of the open papers until Use this",
+  );
+  const letterUsed = resolveProposal(letterWrite.draft, "accept");
+  const writtenLines = returnCardLinesOnFile(letterUsed);
+  assert.match(letterCard, /\nUse this\?$/, "the card still ends on Use this?");
+  const cardLines = letterCard.replace(/\nUse this\?$/, "").split("\n");
+  assert.deepEqual(cardLines.slice(0, writtenLines.length), writtenLines, "Use this writes the six rows only");
+  const cardNotes = cardLines.slice(writtenLines.length);
+  assert.deepEqual(cardNotes, [
+    "Wages $96,000. W-2s still needed.",
+    "L&H VENTURES LLC. Partnership. 1065 still needed.",
+    "HO & SOY INC. S corp. Two lines stay. 1120-S still needed.",
+  ]);
+  assert.doesNotMatch(cardNotes.join("\n"), /Sichiv|Vouch|whose|92-3033949/);
+  assert.doesNotMatch(letterCard, /property return|separate business return|Reading the rest/);
+  assert.deepEqual(
+    (nextFoxAsk(letterWrite.draft).actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+    "the card keeps Use this and Change",
+  );
+  assert.deepEqual(
+    deskStripActions([{ id: "card", role: "fox", text: letterCard }], letterWrite.draft).map((item) => item.label),
+    ["Use this", "Change"],
+    "Skip, Upload this, and Looks right stay off the card before Use this",
+  );
+  assert.equal(
+    writtenLines.filter((line) => line === "HO & SOY INC · S corp · $26,351.").length,
+    2,
+    "both K-1 lines stay",
+  );
+  assert.equal(letterUsed.incomeType.value ?? "", "", "Use this does not set Income");
+  assert.notEqual(letterUsed.incomeType.value, "both");
+  assert.equal(letterUsed.facts?.tax_cashflows, undefined, "Use this does not keep an off-card cashflow");
+  assert.equal(letterUsed.facts?.entity_name, undefined, "Use this does not store an entity the card did not speak as its own row");
+  assert.doesNotMatch(JSON.stringify(letterUsed.facts ?? {}), /ownership|92-3033949|88-2563436/);
+  const painted = previewFacts(letterUsed);
+  for (const line of writtenLines) {
+    assert.equal(painted.filter((fact) => fact.value === line).length, writtenLines.filter((item) => item === line).length);
+  }
+  const returnPaint = painted.filter((fact) => fact.label === "Return").map((fact) => fact.value).join("\n");
+  assert.doesNotMatch(returnPaint, /92-3033949|8,919|2,563,436|3,033,949|96,000/);
+  assert.deepEqual(
+    painted.filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    [
+      "W-2s for the $96,000.",
+      "L&H VENTURES LLC. 1065.",
+      "HO & SOY INC. 1120-S.",
+    ],
+    "open papers sit on the pad, not as income",
+  );
+  assert.ok(!painted.some((fact) => fact.id === "income" || fact.id === "qualifying" || fact.label === "Income"));
+  assert.equal(letterUsed.facts?.wages, undefined, "the wage note is not a written income dollar");
+  assert.equal(letterUsed.facts?.household_wages, undefined);
+  const paperBase = {
+    ...letterUsed,
+    path: "acr" as const,
+    taxReturnPacketRead: "reading" as const,
+  };
+  const entityFile = "HO and SOY entity.pdf";
+  const personalStamp = receivedDropCopy(name);
+  const entityStamp = receivedDropCopy(entityFile);
+  const secondDrop = sealStoredFoxThread([
+    { id: "personal-received", role: "system", text: personalStamp },
+    { id: "card", role: "fox", text: letterCard },
+    { id: "used", role: "client", text: "Use this" },
+    { id: "entity-received", role: "system", text: entityStamp },
+    { id: "entity-reprint", role: "fox", text: entityStamp },
+  ]);
+  assert.equal(
+    secondDrop.filter((item) => item.text === personalStamp).length,
+    1,
+    "the personal stamp stays",
+  );
+  assert.equal(
+    secondDrop.filter((item) => item.text === entityStamp).length,
+    1,
+    "a later 1120-S drop keeps its own received line",
+  );
+  assert.equal(
+    withoutDuplicateReceivedLine([
+      { id: "a", role: "system", text: personalStamp },
+      { id: "b", role: "system", text: personalStamp },
+      { id: "c", role: "system", text: entityStamp },
+    ]).length,
+    2,
+  );
+  const afterUse = deskStripActions(secondDrop, paperBase).map((item) => item.label);
+  assert.deepEqual(afterUse, ["Skip", "Upload this", "Looks right"]);
+  assert.ok(
+    !afterUse.some((label) => label === "Create account" || label === "Log in" || label === "Not now"),
+  );
+  const laterEntity = {
+    slot: "other" as const,
+    name: entityFile,
+    type: "application/pdf",
+    size: 1,
+    receivedAt: "2099-01-01T00:00:00.000Z",
+    status: "extracted" as const,
+    extractClass: "tax_return" as const,
+  };
+  const packetTarget = taxReturnPacketDoc({
+    ...paperBase,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: 1,
+        receivedAt,
+        status: "extracted",
+        extractClass: "tax_return",
+      },
+      laterEntity,
+    ],
+  });
+  assert.equal(packetTarget?.name, name, "the personal packet is not the later 1120-S");
+  assert.equal(
+    taxReturnPacketDoc({ ...emptyDraft(), documents: [laterEntity] })?.name,
+    entityFile,
+    "with no spoken return, the latest tax return is still the packet",
+  );
+  const headingLayer = [
+    "Form 1120-S",
+    "U.S. Income Tax Return for an S Corporation",
+    "Name of corporation HO & SOY INC",
+    "7 Compensation of officers 96,000",
+    "1c Gross receipts or sales 535,394",
+  ];
+  const entityHeadingMap = readerMapFromPrintedLines(headingLayer);
+  assert.equal(entityHeadingMap.lines.some((line) => line.kind === "k1_box1"), false);
+  const headingOnly = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      k1_partner_name: "Not On The Page",
+      k1_ordinary_income: "26351",
+      officer_compensation: "96000",
+      gross_receipts: "535394",
+      ein: "92-3033949",
+    },
+    readerMap: entityHeadingMap,
+  });
+  assert.equal(headingOnly.draft.pendingProposal, null, "a heading does not open Use this");
+  assert.ok(
+    headingOnly.quietLines.some((line) => isK1NoPersonLine(line)),
+    "a heading says the 1120-S is still needed",
+  );
+  assert.deepEqual(
+    previewFacts(headingOnly.draft).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    previewFacts(paperBase).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    "a heading does not clear the 1120-S line",
+  );
+  assert.equal(headingOnly.draft.facts?.wages, undefined);
+  assert.equal(headingOnly.draft.facts?.gross_receipts, undefined);
+  assert.equal(headingOnly.draft.facts?.officer_compensation, undefined);
+  assert.equal(headingOnly.draft.facts?.k1_partner_name, undefined);
+  assert.equal(headingOnly.draft.incomeType.value ?? "", "");
+  assert.equal(k1PersonName("PTP PTP PTP", "HO & SOY INC"), "", "a repeated mark is not a person");
+  assert.equal(k1PersonName("Sichiv Ho", "HO & SOY INC"), "Sichiv Ho");
+  const repeatedMarkLayer = [
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "HO & SOY INC",
+    "Shareholder's name, address, city, state, and ZIP code",
+    "PTP PTP PTP",
+    "1 Ordinary business income (loss) 26,351",
+  ];
+  const repeatedMarkMap = readerMapFromPrintedLines(repeatedMarkLayer);
+  assert.equal(repeatedMarkMap.lines.some((line) => line.kind === "k1_box1"), false);
+  assert.ok(!repeatedMarkMap.names.some((item) => /ptp/i.test(item)));
+  const repeatedMarkWrite = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      k1_partner_name: "PTP PTP PTP",
+      k1_ordinary_income: "26351",
+    },
+    readerMap: repeatedMarkMap,
+  });
+  assert.equal(repeatedMarkWrite.draft.pendingProposal, null, "a repeated mark does not open Use this");
+  assert.deepEqual(
+    previewFacts(repeatedMarkWrite.draft).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    previewFacts(paperBase).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    "1120-S stays Still needed when the only name is a repeated mark",
+  );
+  assert.equal(repeatedMarkWrite.draft.facts?.k1_partner_name, undefined);
+  assert.equal(repeatedMarkWrite.draft.incomeType.value ?? "", "");
+  assert.ok(
+    repeatedMarkWrite.quietLines.some((line) => isK1NoPersonLine(line)),
+    "a repeated mark says the 1120-S is still needed",
+  );
+  assert.doesNotMatch(
+    repeatedMarkWrite.quietLines.find((line) => isK1NoPersonLine(line)) ?? "",
+    /Use this/,
+  );
+  const markThenPerson = readerMapFromPrintedLines([
+    ...repeatedMarkLayer,
+    "Sichiv Ho",
+  ]);
+  assert.deepEqual(
+    markThenPerson.lines.filter((line) => line.kind === "k1_box1").map((line) => line.value),
+    ["Sichiv Ho"],
+    "a later named person is the Box 1 line",
+  );
+  assert.equal(tradeStyleName("EDNA DONUT BY GEORGE"), true);
+  assert.equal(tradeStyleName("Sichiv Ho"), false);
+  assert.equal(tradeStyleName("Mary Ann Lee"), false);
+  assert.equal(k1PersonName("EDNA DONUT BY GEORGE", "HO & SOY INC"), "", "a trade-style name is not a person");
+  assert.equal(k1PersonName("Mary Ann Lee", "HO & SOY INC"), "Mary Ann Lee");
+  const tradeStyleLayer = [
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "HO & SOY INC",
+    "EDNA DONUT BY GEORGE",
+    "1 Ordinary business income (loss) 26,351",
+  ];
+  const tradeStyleMap = readerMapFromPrintedLines(tradeStyleLayer);
+  assert.equal(tradeStyleMap.lines.some((line) => line.kind === "k1_box1"), false);
+  assert.ok(!tradeStyleMap.names.some((item) => /edna|donut|george/i.test(item)));
+  const tradeStyleWrite = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      k1_partner_name: "EDNA DONUT BY GEORGE",
+      k1_ordinary_income: "26351",
+    },
+    readerMap: tradeStyleMap,
+  });
+  assert.equal(tradeStyleWrite.draft.pendingProposal, null, "a trade-style name does not open Use this");
+  assert.deepEqual(
+    previewFacts(tradeStyleWrite.draft).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    previewFacts(paperBase).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    "1120-S stays Still needed when the only name is a trade name",
+  );
+  assert.equal(tradeStyleWrite.draft.facts?.k1_partner_name, undefined);
+  assert.equal(tradeStyleWrite.draft.incomeType.value ?? "", "");
+  const noPersonLine = tradeStyleWrite.quietLines.find((line) => isK1NoPersonLine(line)) ?? "";
+  assert.match(noPersonLine, /1120-S is still needed\. No person was on the K-1\.$/);
+  assert.doesNotMatch(noPersonLine, /Use this|92-|26,351/);
+  assert.equal(tradeStyleWrite.draft.k1PaperNoPerson, "HO & SOY INC");
+  assert.deepEqual(returnCardLinesOnFile(tradeStyleWrite.draft), returnCardLinesOnFile(paperBase));
+  const reasonAsk = nextFoxAsk(tradeStyleWrite.draft);
+  assert.equal(reasonAsk.text, noPersonLine);
+  assert.equal(isOpenPapersFollowLine(reasonAsk.text), false, "no named person stays the silence line");
+  assert.deepEqual(
+    (reasonAsk.actions ?? []).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+  );
+  assert.deepEqual(
+    deskStripActions([{ id: "no-person", role: "fox", text: noPersonLine }], tradeStyleWrite.draft).map(
+      (item) => item.label,
+    ),
+    ["Skip", "Upload this", "Looks right"],
+  );
+  const corpTradeLayer = [
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "Corporation's name, address, city, state, and ZIP code",
+    "HO & SOY INC",
+    "Harbor Bake Shop",
+    "Trade name",
+    "North Bakery",
+    "1 Ordinary business income (loss) 26,351",
+  ];
+  const corpTradeMap = readerMapFromPrintedLines(corpTradeLayer);
+  assert.equal(corpTradeMap.lines.some((line) => line.kind === "k1_box1"), false, "a business-marked name is not Box 1");
+  const tradeThenPerson = readerMapFromPrintedLines([
+    ...corpTradeLayer,
+    "Shareholder's name, address, city, state, and ZIP code",
+    "Mary Ann Lee",
+  ]);
+  assert.deepEqual(
+    tradeThenPerson.lines.filter((line) => line.kind === "k1_box1").map((line) => line.value),
+    ["Mary Ann Lee"],
+    "a later named person still opens Box 1",
+  );
+  const labeledTradeWrite = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+    },
+    readerMap: corpTradeMap,
+  });
+  assert.equal(labeledTradeWrite.draft.pendingProposal, null);
+  assert.ok(labeledTradeWrite.quietLines.some((line) => isK1NoPersonLine(line)));
+  const personAfterTrade = applyExtractedFields(tradeStyleWrite.draft, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+    },
+    readerMap: tradeThenPerson,
+  });
+  assert.equal(personAfterTrade.draft.k1PaperNoPerson, undefined);
+  assert.ok(!personAfterTrade.quietLines.some((line) => isK1NoPersonLine(line)));
+  assert.match(nextFoxAsk(personAfterTrade.draft).text, /K-1 Box 1 is Mary Ann Lee/);
+  assert.match(nextFoxAsk(personAfterTrade.draft).text, /Use this\?$/);
+  assert.equal(personAfterTrade.draft.incomeType.value ?? "", "");
+  const responsibleMap = readerMapFromPrintedLines([
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "HO & SOY INC",
+    "If the shareholder is a disregarded entity, a trust, an estate, or a nominee or similar person, enter the individual or entity responsible for reporting:",
+    "Harbor Bake Shop",
+    "Shareholder's name, address, city, state, and ZIP code",
+    "Mary Ann Lee",
+    "1 Ordinary business income (loss) 26,351",
+  ]);
+  assert.deepEqual(
+    responsibleMap.lines.filter((line) => line.kind === "k1_box1").map((line) => line.value),
+    ["Mary Ann Lee"],
+    "the entity responsible for reporting is not the shareholder",
+  );
+  const entityLayer = [
+    ...headingLayer,
+    "Schedule K-1 (Form 1120-S)",
+    "Shareholder's Share of Income, Deductions, Credits, etc.",
+    "HO & SOY INC",
+    "Shareholder's name, address, city, state, and ZIP code",
+    "Sichiv Ho",
+    "1 Ordinary business income (loss) 26,351",
+    "Schedule K-1 (Form 1120-S)",
+    "HO & SOY INC",
+    "Shareholder's name, address, city, state, and ZIP code",
+    "Vouch Eim Soy",
+    "1 Ordinary business income (loss) 26,351",
+  ];
+  const entityMap = readerMapFromPrintedLines(entityLayer);
+  const box1 = entityMap.lines.filter((line) => line.kind === "k1_box1");
+  assert.deepEqual(
+    box1.map((line) => line.value),
+    ["Sichiv Ho", "Vouch Eim Soy"],
+    "Box 1 people come from the K-1 text layer",
+  );
+  assert.ok(
+    box1.every((line) => line.note !== "100s"),
+    "a federal K-1 heading does not have to flag the second person",
+  );
+  const entityPaper = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      k1_partner_name: "Not On The Page",
+      officer_compensation: "96000",
+      gross_receipts: "535394",
+      ein: "92-3033949",
+    },
+    readerMap: entityMap,
+  });
+  const personAsk = nextFoxAsk(entityPaper.draft);
+  assert.match(personAsk.text, /Form 1120-S for HO & SOY INC/);
+  assert.match(personAsk.text, /K-1 Box 1 is Sichiv Ho/);
+  assert.match(personAsk.text, /Use this\?$/);
+  assert.doesNotMatch(personAsk.text, /a month|suggesting|92-3033949|officer wages|Reading the rest/i);
+  assert.deepEqual((personAsk.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+  assert.deepEqual(
+    deskStripActions([{ id: "k1-person", role: "fox", text: personAsk.text }], entityPaper.draft).map(
+      (item) => item.label,
+    ),
+    ["Use this", "Change"],
+  );
+  assert.ok(
+    !(personAsk.actions ?? []).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+  );
+  assert.equal(entityPaper.draft.facts?.wages, undefined);
+  assert.equal(entityPaper.draft.facts?.gross_receipts, undefined);
+  assert.equal(entityPaper.draft.incomeType.value ?? "", "");
+  assert.deepEqual(returnCardLinesOnFile(entityPaper.draft), writtenLines);
+  loadIntakeDraft(entityPaper.draft);
+  const entityUsed = applyCapture({ field: "accept-proposal" });
+  assert.equal(entityUsed.facts?.k1_partner_name?.value, "Sichiv Ho");
+  assert.equal(entityUsed.facts?.other_k1_partner_name, undefined);
+  assert.equal(entityUsed.facts?.qualifying_income, undefined);
+  assert.equal(entityUsed.facts?.k1_ordinary_income, undefined);
+  assert.equal(entityUsed.facts?.wages, undefined);
+  assert.equal(entityUsed.facts?.officer_compensation, undefined);
+  assert.equal(entityUsed.facts?.gross_receipts, undefined);
+  assert.equal(entityUsed.incomeType.value ?? "", "");
+  assert.equal(entityUsed.returnPaperOtherK1, false);
+  assert.doesNotMatch(JSON.stringify(entityUsed.facts ?? {}), /92-3033949/);
+  assert.deepEqual(returnCardLinesOnFile(entityUsed), writtenLines, "the six return rows stay");
+  assert.ok(returnCardLinesOnFile(entityUsed).some((line) => /ABEL/i.test(line)));
+  const entityPad = previewFacts(entityUsed);
+  assert.deepEqual(
+    entityPad.filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    ["W-2s for the $96,000.", "L&H VENTURES LLC. 1065."],
+    "Use this clears only the 1120-S paper",
+  );
+  assert.deepEqual(
+    entityPad.filter((fact) => fact.label === "K-1").map((fact) => fact.value),
+    ["Sichiv Ho"],
+    "the name from Use this is on the pad",
+  );
+  assert.ok(!entityPad.some((fact) => fact.id === "qualifying" || fact.label === "Income"));
+  assert.ok(!entityPad.some((fact) => fact.label === "K-1" && /\$/.test(fact.value)));
+  const otherAsk = nextFoxAsk(entityUsed);
+  assert.match(otherAsk.text, /Form 1120-S for HO & SOY INC/);
+  assert.match(otherAsk.text, /K-1 Box 1 is Vouch Eim Soy, ordinary business income \$26,351/);
+  assert.match(otherAsk.text, /Use this\?$/);
+  assert.doesNotMatch(otherAsk.text, /Other K-1|on this loan|%|92-3033949|officer|EDNA|DONUT/);
+  assert.notEqual(otherAsk.text, "Other K-1 — is that person on this loan?");
+  assert.deepEqual((otherAsk.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+  assert.deepEqual(
+    deskStripActions([{ id: "other-k1", role: "fox", text: otherAsk.text }], entityUsed).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  assert.ok(
+    !(otherAsk.actions ?? []).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+  );
+  const otherYes = applyCapture({ field: "accept-proposal" });
+  assert.equal(otherYes.pendingProposal, null, "the second Use this does not open an income row");
+  assert.equal(otherYes.facts?.k1_partner_name?.value, "Sichiv Ho");
+  assert.equal(otherYes.facts?.other_k1_partner_name?.value, "Vouch Eim Soy");
+  assert.equal(otherYes.facts?.qualifying_income, undefined);
+  assert.equal(otherYes.facts?.other_k1_box1, undefined);
+  assert.equal(otherYes.facts?.k1_ordinary_income, undefined);
+  assert.equal(otherYes.incomeType.value ?? "", "");
+  assert.equal(otherYes.returnPaperOtherK1, false);
+  const otherFollow = nextFoxAsk(otherYes);
+  assert.equal(
+    otherFollow.text,
+    "W-2s for the $96,000 are still needed. L&H VENTURES LLC. 1065 is still needed.",
+  );
+  assert.equal(isOpenPapersFollowLine(otherFollow.text), true);
+  assert.doesNotMatch(otherFollow.text, /1120-S|Use this\?|Other K-1|on this loan/);
+  assert.deepEqual((otherFollow.actions ?? []).map((item) => item.label), ["Skip", "Upload this", "Looks right"]);
+  assert.ok(
+    !(otherFollow.actions ?? []).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+  );
+  const otherThread = sealStoredFoxThread([
+    { id: "card", role: "fox", text: otherAsk.text },
+    { id: "tap", role: "client", text: "Use this" },
+    { id: "next", role: "fox", text: otherFollow.text },
+  ]);
+  const otherLast = [...otherThread].reverse().find((item) => item.role === "fox");
+  assert.equal(otherLast?.text, otherFollow.text, "the second Use this paints a next line");
+  assert.notEqual(otherLast?.text, otherAsk.text);
+  assert.ok(
+    otherThread.some(
+      (item) => item.role === "fox" && item !== otherLast && /Vouch Eim Soy/.test(item.text),
+    ),
+    "the used card stays above the next line",
+  );
+  assert.deepEqual(
+    deskStripActions(otherThread, otherYes).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+  );
+  assert.deepEqual(
+    previewFacts(otherYes).filter((fact) => fact.label === "K-1").map((fact) => fact.value),
+    ["Sichiv Ho", "Vouch Eim Soy"],
+  );
+  assert.deepEqual(
+    previewFacts(otherYes).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    ["W-2s for the $96,000.", "L&H VENTURES LLC. 1065."],
+  );
+  assert.ok(!previewFacts(otherYes).some((fact) => fact.label === "K-1" && /\$/.test(fact.value)));
+  assert.ok(!previewFacts(otherYes).some((fact) => fact.id === "qualifying" || fact.label === "Income"));
+  const pageSpelling = [
+    ...headingLayer,
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "Corporation's name",
+    "HO & SOY INC",
+    "Shareholder's name",
+    "SICHIV HO",
+    "1 Ordinary business income (loss) 26,351 0 26,351",
+    "Schedule K-1 (Form 1120-S)",
+    "Shareholder's Share of Income, Deductions, Credits, etc.",
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "Corporation's name",
+    "HO & SOY INC",
+    "Shareholder's name",
+    "VOUCH EIM SOY",
+    "1 Ordinary business income (loss) 26,351",
+  ];
+  const pageMap = readerMapFromPrintedLines(pageSpelling);
+  assert.deepEqual(
+    pageMap.lines.filter((line) => line.kind === "k1_box1").map((line) => line.value),
+    ["SICHIV HO", "VOUCH EIM SOY"],
+    "a federal K-1 heading between California pages keeps both shareholders",
+  );
+  const pagePaper = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+    },
+    readerMap: pageMap,
+  });
+  assert.match(nextFoxAsk(pagePaper.draft).text, /K-1 Box 1 is SICHIV HO, ordinary business income \$26,351/);
+  loadIntakeDraft(pagePaper.draft);
+  const pageUsed = applyCapture({ field: "accept-proposal" });
+  assert.equal(pageUsed.facts?.k1_partner_name?.value, "SICHIV HO");
+  assert.equal(pageUsed.returnPaperOtherK1, false);
+  assert.deepEqual(
+    previewFacts(pageUsed).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    ["W-2s for the $96,000.", "L&H VENTURES LLC. 1065."],
+  );
+  assert.deepEqual(
+    previewFacts(pageUsed).filter((fact) => fact.label === "K-1").map((fact) => fact.value),
+    ["SICHIV HO"],
+  );
+  const pageSecond = nextFoxAsk(pageUsed);
+  assert.match(pageSecond.text, /K-1 Box 1 is VOUCH EIM SOY, ordinary business income \$26,351/);
+  assert.match(pageSecond.text, /Use this\?$/);
+  assert.doesNotMatch(pageSecond.text, /Other K-1|on this loan|%|officer|EDNA/);
+  assert.deepEqual((pageSecond.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+  assert.equal(pageUsed.incomeType.value ?? "", "");
+  assert.deepEqual(returnCardLinesOnFile(pageUsed), writtenLines);
+  const pageSecondUsed = applyCapture({ field: "accept-proposal" });
+  const pageFollow = nextFoxAsk(pageSecondUsed);
+  assert.equal(
+    pageFollow.text,
+    "W-2s for the $96,000 are still needed. L&H VENTURES LLC. 1065 is still needed.",
+  );
+  assert.doesNotMatch(pageFollow.text, /1120-S|SICHIV|VOUCH|Use this\?/);
+  assert.deepEqual((pageFollow.actions ?? []).map((item) => item.label), ["Skip", "Upload this", "Looks right"]);
+  const pageThread = sealStoredFoxThread([
+    { id: "card", role: "fox", text: pageSecond.text },
+    { id: "tap", role: "client", text: "Use this" },
+    { id: "next", role: "fox", text: pageFollow.text },
+  ]);
+  assert.equal([...pageThread].reverse().find((item) => item.role === "fox")?.text, pageFollow.text);
+  assert.deepEqual(
+    deskStripActions(pageThread, pageSecondUsed).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+  );
+  assert.deepEqual(
+    previewFacts(pageSecondUsed).filter((fact) => fact.label === "K-1").map((fact) => fact.value),
+    ["SICHIV HO", "VOUCH EIM SOY"],
+  );
+  assert.deepEqual(
+    previewFacts(pageSecondUsed).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    ["W-2s for the $96,000.", "L&H VENTURES LLC. 1065."],
+  );
+  assert.equal(pageSecondUsed.incomeType.value ?? "", "");
+  assert.deepEqual(returnCardLinesOnFile(pageSecondUsed), writtenLines);
+  const onePerson = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+    },
+    readerMap: readerMapFromPrintedLines([
+      ...headingLayer,
+      "Schedule K-1 (Form 1120-S)",
+      "HO & SOY INC",
+      "Shareholder's name, address, city, state, and ZIP code",
+      "Mary Ann Lee",
+      "1 Ordinary business income (loss) 18,420",
+    ]),
+  });
+  loadIntakeDraft(onePerson.draft);
+  const oneUsed = applyCapture({ field: "accept-proposal" });
+  const oneFollow = nextFoxAsk(oneUsed);
+  assert.equal(oneUsed.pendingProposal, null);
+  assert.equal(
+    oneFollow.text,
+    "W-2s for the $96,000 are still needed. L&H VENTURES LLC. 1065 is still needed.",
+  );
+  assert.doesNotMatch(oneFollow.text, /1120-S|Mary Ann Lee|Use this\?/);
+  const californiaLayer = [
+    ...headingLayer,
+    "TAXABLE YEAR Shareholder\u2019s Share of Income, CALIFORNIA SCHEDULE",
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "Corporation\u2019s name",
+    "HO & SOY INC",
+    "EDNA DONUT BY GEORGE",
+    "Shareholder\u2019s name Shareholder\u2019s identifying number",
+    "Mary Ann Lee 123-45-6789",
+    "Shareholder\u2019s percentage of stock ownership for the tax year 50.00%",
+    "1 Ordinary business income (loss) 18,420 0 18,420",
+    "Schedule K-1 (100S) 2024 Side 1",
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "Corporation\u2019s name",
+    "HO & SOY INC",
+    "Shareholder\u2019s name",
+    "Chris Nguyen XXX-XX-4321",
+    "Shareholder\u2019s percentage of stock ownership 50%",
+    "1 Ordinary business income (loss) 22,040",
+    "Side 2 Schedule K-1 (100S) 2024",
+  ];
+  const californiaMap = readerMapFromPrintedLines(californiaLayer);
+  const californiaPeople = californiaMap.lines.filter((line) => line.kind === "k1_box1");
+  assert.deepEqual(
+    californiaPeople.map((line) => [line.value, line.label, line.note]),
+    [
+      ["Mary Ann Lee", "HO & SOY INC · 18420", "100s"],
+      ["Chris Nguyen", "HO & SOY INC · 22040", "100s"],
+    ],
+    "each California K-1 (100S) shareholder is Box 1",
+  );
+  assert.ok(!californiaMap.names.some((item) => /edna|donut|george/i.test(item)));
+  assert.equal(
+    shouldReadLater1120sK1Pages(headingLayer, "Ho Soy Inc 2024 Tax returns 1120S.pdf"),
+    true,
+    "an 1120-S cover still has to reach the shareholder pages",
+  );
+  assert.equal(
+    shouldReadLater1120sK1Pages(entityLayer, "Ho Soy Inc 2024 Tax returns 1120S.pdf"),
+    false,
+    "a named K-1 already on the first pages stays on that read",
+  );
+  assert.equal(
+    shouldReadLater1120sK1Pages(headingLayer, "30-1040-2024-tax-return-combes.pdf"),
+    false,
+    "a personal return stays on the first pages",
+  );
+  const californiaTradeMap = readerMapFromPrintedLines([
+    ...headingLayer,
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "Corporation\u2019s name",
+    "HO & SOY INC",
+    "EDNA DONUT BY GEORGE",
+    "1 Ordinary business income (loss) 18,420",
+  ]);
+  assert.equal(californiaTradeMap.lines.some((line) => line.kind === "k1_box1"), false);
+  const californiaMarkMap = readerMapFromPrintedLines([
+    ...headingLayer,
+    "2024 Deductions, Credits, etc. K-1 (100S)",
+    "HO & SOY INC",
+    "Shareholder\u2019s name",
+    "PTP PTP PTP",
+    "1 Ordinary business income (loss) 18,420",
+  ]);
+  assert.equal(californiaMarkMap.lines.some((line) => line.kind === "k1_box1"), false);
+  const californiaPaper = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+      officer_compensation: "96000",
+      gross_receipts: "535394",
+      ein: "92-3033949",
+      ownership_percent: "50",
+    },
+    readerMap: californiaMap,
+  });
+  assert.ok(!californiaPaper.quietLines.some((line) => isK1NoPersonLine(line)));
+  assert.equal(californiaPaper.draft.k1PaperNoPerson, undefined);
+  const firstCalifornia = nextFoxAsk(californiaPaper.draft);
+  assert.match(firstCalifornia.text, /Form 1120-S for HO & SOY INC/);
+  assert.match(firstCalifornia.text, /K-1 Box 1 is Mary Ann Lee, ordinary business income \$18,420/);
+  assert.match(firstCalifornia.text, /Use this\?$/);
+  assert.doesNotMatch(firstCalifornia.text, /Chris Nguyen|%|6789|4321/);
+  assert.doesNotMatch(firstCalifornia.text, /No person was on the K-1|92-3033949|officer|a month|EDNA|DONUT/);
+  assert.deepEqual((firstCalifornia.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+  assert.equal(californiaPaper.draft.incomeType.value ?? "", "");
+  assert.deepEqual(returnCardLinesOnFile(californiaPaper.draft), writtenLines);
+  const firstCaliforniaUsed = resolveProposal(californiaPaper.draft, "accept");
+  assert.equal(firstCaliforniaUsed.facts?.k1_partner_name?.value, "Mary Ann Lee");
+  assert.equal(firstCaliforniaUsed.facts?.other_k1_partner_name, undefined);
+  assert.equal(firstCaliforniaUsed.facts?.qualifying_income, undefined);
+  assert.equal(firstCaliforniaUsed.facts?.k1_ordinary_income, undefined);
+  assert.equal(firstCaliforniaUsed.facts?.officer_compensation, undefined);
+  assert.equal(firstCaliforniaUsed.incomeType.value ?? "", "");
+  assert.equal(firstCaliforniaUsed.returnPaperOtherK1, false);
+  assert.deepEqual(
+    previewFacts(firstCaliforniaUsed).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    ["W-2s for the $96,000.", "L&H VENTURES LLC. 1065."],
+  );
+  assert.deepEqual(
+    previewFacts(firstCaliforniaUsed).filter((fact) => fact.label === "K-1").map((fact) => fact.value),
+    ["Mary Ann Lee"],
+  );
+  const secondCalifornia = nextFoxAsk(firstCaliforniaUsed);
+  assert.match(secondCalifornia.text, /K-1 Box 1 is Chris Nguyen, ordinary business income \$22,040/);
+  assert.match(secondCalifornia.text, /Use this\?$/);
+  assert.doesNotMatch(secondCalifornia.text, /Other K-1|on this loan|%|No person was on the K-1/);
+  assert.deepEqual((secondCalifornia.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
+  const secondCaliforniaUsed = resolveProposal(firstCaliforniaUsed, "accept");
+  assert.equal(secondCaliforniaUsed.facts?.k1_partner_name?.value, "Mary Ann Lee");
+  assert.equal(secondCaliforniaUsed.facts?.other_k1_partner_name?.value, "Chris Nguyen");
+  assert.equal(secondCaliforniaUsed.facts?.qualifying_income, undefined);
+  assert.equal(secondCaliforniaUsed.facts?.other_k1_box1, undefined);
+  assert.equal(secondCaliforniaUsed.pendingProposal, null);
+  assert.equal(secondCaliforniaUsed.returnPaperOtherK1, false);
+  assert.notEqual(nextFoxAsk(secondCaliforniaUsed).text, "Other K-1 — is that person on this loan?");
+  assert.doesNotMatch(nextFoxAsk(secondCaliforniaUsed).text, /No person was on the K-1/);
+  assert.equal(secondCaliforniaUsed.incomeType.value ?? "", "");
+  assert.deepEqual(returnCardLinesOnFile(secondCaliforniaUsed), writtenLines);
+  assert.ok(returnCardLinesOnFile(secondCaliforniaUsed).some((line) => /ABEL/i.test(line)));
+  const afterOther = deskStripActions(
+    [{ id: "other-k1", role: "fox", text: otherAsk.text }],
+    otherYes,
+  ).map((item) => item.label);
+  assert.ok(
+    !afterOther.some((label) => label === "Create account" || label === "Log in" || label === "Not now"),
+    "answering the other K-1 does not put account chips on the composer",
+  );
+  assert.deepEqual(returnCardLinesOnFile(otherYes), writtenLines);
+  assert.doesNotMatch(
+    painted.filter((fact) => fact.label === "Still needed").map((fact) => fact.value).join("\n"),
+    /Sichiv|Vouch|92-3033949|Partnership|S corp/,
+  );
+  const paintedText = painted.map((fact) => fact.value).join("\n");
+  assert.doesNotMatch(paintedText, /\bown(?:s|ed|ership)?\b/i);
+  assert.ok(!painted.some((fact) => fact.id === "qualifying" || fact.id === "income"));
+  assert.ok(!docsInDisplayLabels(letterUsed).includes("Paystubs in"));
+  const readingDraft = {
+    ...letterUsed,
+    path: "acr" as const,
+    documents: letterUsed.documents.map((doc) => ({
+      ...doc,
+      extractClass: "tax_return" as const,
+      bytesRef: doc.bytesRef || "packet-bytes",
+    })),
+  };
+  const readingAsk = nextFoxAsk(readingDraft);
+  assert.notEqual(readingAsk.text, PACKET_READING_LINE, "the reading beat stays off this card");
+  assert.equal(readingAsk.text, "");
+  assert.deepEqual(readingAsk.actions ?? [], []);
+  const startOver = { ...emptyDraft(), path: "acr" as const, workspaceFlow: true };
+  const startOverLine = workspaceGreeting(startOver).text;
+  assert.deepEqual(
+    deskStripActions([{ id: "greet", role: "fox", text: startOverLine }], startOver).map((item) => item.label),
+    ["Create account", "Log in", "Not now"],
+    "Start over still offers Create account, Log in, and Not now",
+  );
+  const readingDrop = {
+    ...startOver,
+    documents: [
+      {
+        slot: "other" as const,
+        name: "return.pdf",
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: "2026-10-01T16:00:00.000Z",
+        status: "reading" as const,
+      },
+    ],
+  };
+  assert.equal(workspaceGreeting(readingDrop).text, startOverLine, "reading does not add a spoken line");
+  assert.deepEqual(
+    deskStripActions([{ id: "greet", role: "fox", text: startOverLine }], readingDrop).map((item) => item.label),
+    [],
+    "Create account, Log in, and Not now stay off while the return is reading",
+  );
+  const cardWhileReading = {
+    ...letterWrite.draft,
+    documents: letterWrite.draft.documents.map((doc) => ({ ...doc, status: "reading" as const })),
+  };
+  assert.deepEqual(
+    deskStripActions([{ id: "card", role: "fox", text: letterCard }], cardWhileReading).map((item) => item.label),
+    ["Use this", "Change"],
+    "the card keeps Use this and Change while a read is in flight",
+  );
+  assert.notEqual(nextFoxAsk(cardWhileReading).text, PACKET_READING_LINE);
+  const readingFace = {
+    ...startOver,
+    taxReturnPacketRead: "reading" as const,
+    documents: [
+      {
+        slot: "other" as const,
+        name: "return.pdf",
+        type: "application/pdf",
+        size: 1200,
+        receivedAt: "2026-10-01T16:00:00.000Z",
+        status: "extracted" as const,
+        extractClass: "tax_return" as const,
+        bytesRef: "packet-bytes",
+      },
+    ],
+  };
+  const readingBeat = nextFoxAsk(readingFace);
+  assert.equal(returnCardLinesOnFile(readingFace).length, 0);
+  assert.equal(readingBeat.text, PACKET_READING_LINE, "a year-and-name read still speaks the reading line");
+  assert.ok(
+    !(readingBeat.actions ?? []).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+    "the reading beat does not inherit the Start over account offer",
+  );
+  const afterUseThread = [
+    { id: "card", role: "fox", text: letterCard },
+    { id: "use", role: "client", text: "Use this" },
+  ];
+  assert.deepEqual(
+    deskStripActions(afterUseThread, readingDraft).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+    "a paper still needed keeps Skip, Upload this, and Looks right on the last line",
+  );
+  assert.ok(
+    !deskStripActions(afterUseThread, readingDraft).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+    "Create account, Log in, and Not now stay off the composer after this card",
+  );
+  const frozenCard = freezeUsedFoxTurns(afterUseThread).find((message) => message.role === "fox");
+  assert.ok(frozenCard);
+  assert.equal(isReturnCardSpeech(frozenCard?.text), true, "the used card stays a row card");
+  assert.doesNotMatch(frozenCard?.text ?? "", /Use this\?/);
+  assert.ok(frozenCard?.text.includes("Wages $96,000. W-2s still needed."));
+  assert.ok(frozenCard?.text.includes("L&H VENTURES LLC. Partnership. 1065 still needed."));
+  assert.ok(frozenCard?.text.includes("HO & SOY INC. S corp. Two lines stay. 1120-S still needed."));
+  assert.deepEqual(
+    deskStripActions(freezeUsedFoxTurns(afterUseThread), readingDraft).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+  );
+  assert.equal(readingDraft.incomeType.value ?? "", "");
+  const packetAfterCard = applyExtractedFields(letterUsed, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      packet_read: "schedules",
+      tax_year: "2024",
+      form_1040: "1",
+      wages: line1z.wages,
+      schedule_e_rents_received: "106404",
+      schedule_e_cash_expenses: "31452",
+      gross_receipts: "77131",
+      business_name: "VOUCH EIM SOY",
+      return_kind: "1120s",
+    },
+  });
+  assert.deepEqual(returnCardLinesOnFile(packetAfterCard.draft), writtenLines);
+  assert.equal(packetAfterCard.draft.incomeType.value ?? "", "");
+  assert.equal(packetAfterCard.draft.facts?.gross_receipts, undefined);
+  assert.equal(packetAfterCard.draft.facts?.qualifying_income, undefined);
+  assert.equal(packetAfterCard.draft.pendingProposal, null, "the spoken card does not open a monthly suggestion");
+  assert.ok(
+    !previewFacts(packetAfterCard.draft).some((fact) => /gross receipts/i.test(`${fact.label} ${fact.value}`)),
+    "the pad has no gross-receipts line",
+  );
+  assert.doesNotMatch(nextFoxAsk(packetAfterCard.draft).text, /a month|suggesting \$|Wages \$|1065 still needed|1120-S still needed|Reading the rest/i);
+  assert.ok(!packetAfterCard.quietLines.some((line) => /Wages|1065 still needed|1120-S still needed|couldn.t read household wages/i.test(line)));
+  assert.ok(!packetAfterCard.quietLines.includes(PACKET_WAGES_UNREAD_LINE));
+  assert.equal(packetAfterCard.draft.facts?.wages, undefined);
+  assert.equal(packetAfterCard.draft.facts?.household_wages, undefined);
+  assert.deepEqual(
+    previewFacts(packetAfterCard.draft)
+      .filter((fact) => fact.label === "Still needed")
+      .map((fact) => fact.value),
+    [
+      "W-2s for the $96,000.",
+      "L&H VENTURES LLC. 1065.",
+      "HO & SOY INC. 1120-S.",
+    ],
+  );
+  assert.deepEqual(
+    deskStripActions(freezeUsedFoxTurns(afterUseThread), { ...packetAfterCard.draft, path: "acr" }).map(
+      (item) => item.label,
+    ),
+    ["Skip", "Upload this", "Looks right"],
+  );
+  assert.ok(
+    !deskStripActions(freezeUsedFoxTurns(afterUseThread), { ...packetAfterCard.draft, path: "acr" }).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+  );
+  assert.deepEqual(returnCardLinesOnFile(packetAfterCard.draft), writtenLines);
+  const headingAsked = applyExtractedFields(emptyDraft(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      full_name: "Filing Status and Standard Deduction",
+      entity_name: "L&H VENTURES LLC",
+      wages: "8919",
+      wage_line_label: "wages",
+    },
+    readerMap: headingMap,
+  });
+  assert.ok(!headingAsked.draft.pendingProposal, "a heading soup must not keep Use this");
+  const headingPacket = printedReturnPdf(HEADING_AND_WAGE);
+  const headingExtract = await classifyAndExtract(
+    headingPacket,
+    "application/pdf",
+    namesOnlyLook,
+    null,
+    name,
+  );
+  assert.equal(headingExtract.failed, true, "form titles and a wage are not the return card");
+  assert.ok((headingExtract.warnings ?? []).includes("unmapped-text"));
+  assert.ok(!(headingExtract.warnings ?? []).includes("no-text-layer"));
+  assert.equal(readerMapOpensReturnCard(headingExtract.readerMap), false);
+  const headingAt = "2026-09-30T04:08:00.000Z";
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: headingPacket.byteLength,
+        receivedAt: headingAt,
+        status: "received",
+      },
+    ],
+  });
+  const headingWrite = applyExtractWrite(
+    headingAt,
+    name,
+    {
+      extractClass: headingExtract.extractClass,
+      confidence: headingExtract.confidence,
+      fields: headingExtract.fields,
+      readerMap: headingExtract.readerMap,
+    },
+    FAILED_READ_NOTE,
+    true,
+  );
+  assert.ok(!headingWrite.draft.pendingProposal);
+  assert.ok(headingWrite.quietLines.includes(FAILED_READ_NOTE));
+  assert.equal(headingWrite.quietLines.filter((line) => line === FAILED_READ_NOTE).length, 1);
+  assert.ok(!headingWrite.quietLines.includes(NO_TEXT_LAYER_NOTE));
+  const headingLine = headingWrite.quietLines.find((line) => line === FAILED_READ_NOTE) ?? "";
+  assert.equal(headingLine, FAILED_READ_NOTE);
+  assert.doesNotMatch(headingLine, /no text layer|8,919|L&H VENTURES|Use this|Filing Status/);
+  assert.doesNotMatch(
+    unreadWrite.draft.pendingProposal ? proposalAskCopy(unreadWrite.draft.pendingProposal) : "",
+    /Schedule C under Vouch Eim Soy|60,343|26,351/,
+  );
+  const three = extracted.readerMap;
+  assert.ok(three?.forms.includes("1040"));
+  assert.ok(three?.forms.includes("schedule_c"));
+  assert.ok(three?.forms.includes("schedule_e"));
+  assert.ok(three?.forms.includes("k1"));
+  assert.ok(three?.names.some((name) => /Sichiv Ho/i.test(name)));
+  assert.doesNotMatch((three?.names ?? []).join(" "), /SICHIY/i);
+  assert.ok(three?.entities.some((name) => /L&H VENTURES LLC/i.test(name)));
+  assert.ok(three?.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
+  assert.equal(readerWageLine(three), null, "1g household employee wages are not a wage to offer");
+  assert.ok(!three?.lines.some((line) => line.kind === "wages" && line.value === "8919"));
+  const garbled = readerMapFromLook(
+    {
+      forms: ["1040"],
+      names: ["SICHIY HO AND VOUCH EIM SOY"],
+      entities: ["L&H VENTURES LLC"],
+      lines: [
+        { kind: "wages", value: "8919", label: "If you did not g Wages from Form , line 6 … 1g" },
+      ],
+    },
+    RETURN_THREE,
+  );
+  assert.ok(garbled.names.some((name) => /Sichiv Ho/i.test(name)));
+  assert.doesNotMatch(garbled.names.join(" "), /SICHIY/i);
+  assert.ok(garbled.entities.some((name) => /HO\s*&\s*SOY INC/i.test(name)));
+  assert.equal(readerWageLine(garbled), null);
+  assert.equal(readerMapOpensReturnCard(garbled), true);
+  const lookBusinesses = readerBusinessLines(garbled);
+  assert.equal(
+    lookBusinesses.filter((line) => line.kind === "k1" && line.value === "26351" && /HO\s*&\s*SOY INC/i.test(line.label ?? "")).length,
+    2,
+    `look path keeps both K-1 lines ${JSON.stringify(lookBusinesses)}`,
+  );
+  assert.equal(
+    lookBusinesses.filter((line) => line.kind === "schedule_e" && line.value === "26351").length,
+    0,
+    `look path does not speak a K-1 dollar as Schedule E ${JSON.stringify(lookBusinesses)}`,
+  );
+  assert.ok(
+    lookBusinesses.some((line) => line.kind === "schedule_e" && line.value === "60343" && /L&H VENTURES LLC/i.test(line.label ?? "")),
+    `look path Schedule E stays the on-page L&H line ${JSON.stringify(lookBusinesses)}`,
+  );
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: dropped.byteLength,
+        receivedAt,
+        status: "received",
+      },
+    ],
+  });
+  const guestStart = applyExtractWrite(receivedAt, name, {
+    extractClass: extracted.extractClass,
+    confidence: extracted.confidence,
+    fields: extracted.fields,
+    readerMap: extracted.readerMap,
+  });
+  assert.ok(!guestStart.draft.path, "guest /start has no path yet");
+  assert.equal(workspacePrompt(guestStart.draft), "confirm-proposal", "a received line is not the write — the pending card is");
+  assert.notEqual(guestStart.draft.incomeType.value, "both", "a drop must not set Income to Both");
+  assert.ok(!guestStart.draft.incomeType.value, "Income stays empty until the borrower chooses");
+  const guestAsk = nextFoxAsk(guestStart.draft);
+  const guestChips = (guestAsk.actions ?? []).map((item) => item.label);
+  assert.deepEqual(guestChips, ["Use this", "Change"], `guest /start first drop is still a card — ${guestAsk.text}`);
+  assert.ok(!guestChips.includes("Not now"));
+  assert.doesNotMatch(guestAsk.text, /received/i);
+  assert.match(guestAsk.text, /Sichiv Ho/i);
+  assert.doesNotMatch(guestAsk.text, /SICHIY/i);
+  assert.match(guestAsk.text, /Schedule C under Vouch Eim Soy/i);
+  assert.match(guestAsk.text, /L&H VENTURES LLC/i);
+  assert.match(guestAsk.text, /60,343/);
+  assert.match(guestAsk.text, /HO\s*&\s*SOY INC/i);
+  assert.match(guestAsk.text, /26,351/);
+  assert.doesNotMatch(guestAsk.text, /8,919|8919/);
+  const guestPad = previewFacts(guestStart.draft);
+  assert.ok(!guestPad.some((fact) => fact.id === "income" || fact.label === "Income"));
+  assert.ok(
+    !guestPad.some((fact) => /L&H|HO\s*&\s*SOY|Sichiv|8,919|8919|60,343|26,351/i.test(`${fact.label} ${fact.value}`)),
+    `pad stays empty of the return — ${JSON.stringify(guestPad)}`,
+  );
+  const guestSkip = resolveProposal(guestStart.draft, "decline");
+  assert.ok(!guestSkip.incomeType.value);
+  assert.equal(guestSkip.facts?.wages, undefined);
+  assert.equal(guestSkip.facts?.entity_name, undefined);
+  assert.ok(INCOME_BUBBLES.some((item) => item.value === "both" && item.label === "Both"));
+  loadIntakeDraft({
+    ...guestStart.draft,
+    incomeAsked: true,
+    incomeType: { ...emptyDraft().incomeType, value: "both" },
+  });
+  const wiped = startOverWorkspace("acr");
+  assert.ok(!wiped.incomeType.value, "Start over still clears income");
+
+  loadIntakeDraft({
+    ...emptyDraft(),
+    workspaceFlow: true,
+    documents: [
+      {
+        slot: "other",
+        name,
+        type: "application/pdf",
+        size: dropped.byteLength,
+        receivedAt,
+        status: "received",
+      },
+    ],
+  });
+  const lookWrite = applyExtractWrite(receivedAt, name, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      full_name: "SICHIY HO AND VOUCH EIM SOY",
+      entity_name: "L&H VENTURES LLC",
+      wages: "8919",
+    },
+    readerMap: garbled,
+  });
+  assert.notEqual(lookWrite.draft.incomeType.value, "both", "look path must not set Income to Both");
+  assert.ok(!lookWrite.draft.incomeType.value, "Income stays empty until the borrower chooses");
+  const lookCard = proposalAskCopy(lookWrite.draft.pendingProposal);
+  assert.match(lookCard, /Sichiv Ho/i);
+  assert.doesNotMatch(lookCard, /SICHIY/i);
+  assert.match(lookCard, /Schedule C under Vouch Eim Soy/i);
+  assert.match(lookCard, /L&H VENTURES LLC/i);
+  assert.match(lookCard, /60,343/);
+  assert.match(lookCard, /HO\s*&\s*SOY INC/i);
+  assert.match(lookCard, /26,351/);
+  assert.doesNotMatch(lookCard, /8,919|8919/);
+
+  const threeSkip = resolveProposal(lookWrite.draft, "decline");
+  assert.equal(threeSkip.facts?.wages, undefined);
+  assert.equal(threeSkip.facts?.entity_name, undefined);
+  assert.ok(!docsInDisplayLabels(threeSkip).includes("Paystubs in"));
+
+  const inventedOnly = applyExtractedFields(looksRightDraft(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { wages: "8919", form_1040: "1" },
+  });
+  assert.equal(inventedOnly.draft.facts?.wages, undefined, "a wage without a reader line does not write");
+  const inventedCopy = inventedOnly.draft.pendingProposal
+    ? proposalAskCopy(inventedOnly.draft.pendingProposal)
+    : "";
+  assert.doesNotMatch(inventedCopy, /8,919|8919|96,000/);
+
+  const namesOnly = applyExtractedFields(looksRightDraft(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: { tax_year: "2024", full_name: "Sichiv Ho and Vouch Eim Soy" },
+  });
+  const namesOnlyCopy = proposalAskCopy(namesOnly.draft.pendingProposal);
+  assert.match(namesOnlyCopy, /2024 return/i);
+  assert.doesNotMatch(namesOnlyCopy, /96,000|96000|HO\s*&\s*SOY/i, "names-only extract does not invent a wage or entity");
+
+  const proposed = applyExtractedFields(looksRightDraft(), {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      full_name: "Sichiv Ho and Vouch Eim Soy",
+      employer_name: "Agfa Monotype Corporation",
+    },
+    readerMap: map,
+  });
+  assert.equal(proposed.draft.facts?.employer_name, undefined);
+  assert.equal(proposed.draft.facts?.tax_year, undefined);
+  assert.equal(proposed.draft.facts?.entity_name, undefined, "entity stays off File until Use this");
+  assert.equal(proposed.draft.facts?.wages, undefined, "wage stays off File until Use this");
+  assert.doesNotMatch(JSON.stringify(proposed.draft.pendingProposal ?? {}), /Agfa|Monotype/i);
+  const card = proposalAskCopy(proposed.draft.pendingProposal);
+  assert.match(card, /2024 return/i);
+  assert.match(card, /Sichiv Ho/i);
+  assert.match(card, /Vouch Eim Soy/i);
+  assert.match(card, /HO\s*&\s*SOY INC/i, `card must name the entity — ${card}`);
+  assert.match(card, /96,000/, `card must offer the on-page wage — ${card}`);
+  assert.doesNotMatch(card, /Agfa|Monotype/i);
+  assert.notEqual(federalReturnConfirmCopy({ tax_year: "2024", full_name: "Sichiv Ho and Vouch Eim Soy" }).includes("96,000"), true);
+  const ask = nextFoxAsk(proposed.draft);
+  assert.deepEqual(
+    (ask.actions ?? []).map((item) => item.label),
+    ["Use this", "Change"],
+  );
+  const skipped = resolveProposal(proposed.draft, "decline");
+  assert.equal(skipped.facts?.tax_year, undefined);
+  assert.equal(skipped.facts?.employer_name, undefined);
+  assert.equal(skipped.facts?.entity_name, undefined);
+  assert.equal(skipped.facts?.wages, undefined);
+  assert.ok(!docsInDisplayLabels(skipped).includes("Paystubs in"));
+
+  const used = resolveProposal(proposed.draft, "accept");
+  assert.doesNotMatch(JSON.stringify(used.facts ?? {}), /Agfa|Monotype/i);
+  assert.match(String(used.facts?.entity_name?.value ?? ""), /HO\s*&\s*SOY INC/i);
+  assert.equal(used.facts?.wages?.value, "96000");
+  assert.ok(!docsInDisplayLabels(used).includes("Paystubs in"), "personal return is not Paystubs in");
+
+  const alwaysOnSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/AlwaysOnFox.tsx"),
+    "utf8",
+  );
+  assert.match(alwaysOnSrc, /receivedDropCopy/);
+  assert.match(alwaysOnSrc, /paintPastReceived\(/);
+  assert.match(alwaysOnSrc, /withoutTrailingFoxReprint/);
+  assert.match(alwaysOnSrc, /paintPastReceived\(\s*alignThreadEmployerName/);
+  assert.match(alwaysOnSrc, /if \(detail\.received\)/);
+  assert.match(
+    alwaysOnSrc,
+    /if \(!detail\.extractClass && !detail\.emptyRead && !\(detail\.quietLines \?\? \[\]\)\.length\) \{\s*return next;/,
+    "received-only without extract still waits",
+  );
+  assert.match(
+    alwaysOnSrc,
+    /if \(returnCardLinesOnFile\(live\)\.length > 0\) \{\s*return cut/,
+    "a spoken return keeps the later received line",
+  );
+  assert.doesNotMatch(
+    alwaysOnSrc,
+    /if \(detail\.received\) \{[\s\S]{0,500}pendingProposal && shouldSpeakPendingConfirm/,
+    "received must not speak a card that was already pending",
+  );
+  assert.match(
+    alwaysOnSrc,
+    /pendingProposal && shouldSpeakPendingConfirm/,
+    "extract on the same intake still speaks the confirm card",
+  );
+  assert.match(
+    alwaysOnSrc,
+    /if \(detail\.emptyRead\) \{[\s\S]{0,500}isUnreadNote\(line\)/,
+    "a failed layer speaks the unread note after received",
+  );
+  assert.match(
+    alwaysOnSrc,
+    /if \(detail\.emptyRead && isUnreadNote\(line\)\) continue;/,
+    "the unread note is the fox line once, not also a system line",
+  );
+  const dropSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/DocumentDrop.tsx"),
+    "utf8",
+  );
+  assert.match(
+    dropSrc,
+    /applyExtractWrite[\s\S]{0,900}emitDocIntake\(\{[\s\S]{0,80}received: emptyRead,\s*extractClass: applied\.extractClass/,
+    "the drop emits received with the extract write",
+  );
+  assert.match(
+    dropSrc,
+    /if \(returnCardLinesOnFile\(getFoxDraft\(\)\)\.length > 0\) \{\s*emitDocIntake\(\{ received: emptyRead \}\);\s*\}/,
+    "after Use this, the next drop speaks received before extract",
+  );
+  assert.doesNotMatch(
+    dropSrc,
+    /emitDocIntake\(\{ received: emptyRead \}\);\s*try \{/,
+    "a first drop still waits for extract before received",
+  );
+  const workspaceSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/workspace.ts"),
+    "utf8",
+  );
+  assert.match(workspaceSrc, /if \(!draft\.path\)/);
+  assert.match(
+    workspaceSrc,
+    /pendingProposal && shouldSpeakPendingConfirm\(draft\)\) return "confirm-proposal"/,
+    "guest /start without a path still speaks the pending card",
+  );
+
+  const extractSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib/docs/extract.ts"), "utf8");
+  assert.match(extractSrc, /Same Grok look/);
+  assert.match(extractSrc, /async read\(/);
+  assert.match(extractSrc, /if \(adapter\.read\)/);
+  assert.match(extractSrc, /readerMapOpensReturnCard/);
+  assert.match(extractSrc, /printedLooksLikePersonal1040\(walked\)/);
+  assert.match(extractSrc, /readReturnTextLayer/);
+  assert.match(extractSrc, /pdf\.js glyphs first/);
+  const classifyExportAt = extractSrc.indexOf("export async function classifyAndExtract");
+  assert.ok(classifyExportAt > 0);
+  assert.ok(
+    extractSrc.indexOf("readReturnTextLayer", classifyExportAt) > classifyExportAt,
+    "the return card layer is a pdf.js read, not a scrape then a null",
+  );
+  assert.doesNotMatch(
+    extractSrc.slice(classifyExportAt),
+    /printedLinesForExtract/,
+    "classifyAndExtract must not scrape first then null a 1040",
+  );
+  assert.doesNotMatch(
+    extractSrc,
+    /else if \(printedLooksLikePersonal1040\(layer\) \|\| printedLooksLikeNeverStubForm\(layer\)\) \{\s*layer = null;/,
+    "trying pdf.js after the scrape is not a read of the packet",
+  );
+  assert.match(extractSrc, /keepReaderReturnCard/);
+  assert.match(extractSrc, /household employee/);
+  assert.doesNotMatch(extractSrc, /hold the class until Use this/);
+  assert.doesNotMatch(extractSrc, /Sichiv/);
+  assert.doesNotMatch(extractSrc, /L&H VENTURES/);
+  assert.doesNotMatch(extractSrc, /SICHIY/);
+  const fileWriteSrc = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "components/fox/fileWrite.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(fileWriteSrc, /HO & SOY INC/, "entity is not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /Sichiv Ho/, "names are not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /L&H VENTURES/, "L&H is not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /96,000/, "wage is not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /60,343/, "Schedule E dollar is not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /26,351/, "K-1 dollar is not a hardcoded card");
+  assert.doesNotMatch(fileWriteSrc, /SICHIY/);
+
+  const walker72 = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "assert-walker-case-72.ts"),
+    "utf8",
+  );
+  assert.match(walker72, /W-2 in · ID in/);
+  const leftoverSrc = readFileSync(fileURLToPath(import.meta.url), "utf8");
+  assert.match(leftoverSrc, /classifyAndExtract/);
+  assert.match(leftoverSrc, /printedReturnPdf\(RETURN_THREE\)/);
+  assert.match(leftoverSrc, /namesOnlyLook/);
+  assert.doesNotMatch(
+    leftoverSrc,
+    /readPdfJsTextLayer\(dropped\)/,
+    "a direct pdf.js read in the leftover is not the product path",
+  );
+  assert.doesNotMatch(
+    leftoverSrc,
+    /readPdfJsTextLayer\(blankPdf\)/,
+    "the blank leftover must go through classifyAndExtract so the failed layer is named",
+  );
+  const pdfAt = leftoverSrc.indexOf("printedReturnPdf(RETURN_THREE)");
+  const extractAt = leftoverSrc.indexOf("classifyAndExtract(\n    dropped");
+  const garbledWriteAt = leftoverSrc.search(/applyExtractWrite\([\s\S]{0,240}readerMap: garbled/);
+  assert.ok(
+    pdfAt > 0 && extractAt > pdfAt && garbledWriteAt > extractAt,
+    "the three-line card comes from classifyAndExtract, not garbled before the PDF",
+  );
+  assert.doesNotMatch(
+    leftoverSrc,
+    /readerMapFromPrintedLines\(RETURN_THREE\)/,
+    "the three-line fixture is the extract map, not in-memory lines before the drop",
+  );
+  const printedFn = extractSrc.slice(
+    extractSrc.indexOf("async function printedLinesForExtract"),
+    extractSrc.indexOf("async function readReturnTextLayer"),
+  );
+  assert.match(printedFn, /printedLooksLikePersonal1040\(raw\)/);
+  assert.match(printedFn, /return readPdfJsTextLayer\(bytes, filename\)/);
+  assert.match(
+    printedFn,
+    /if \(printedLooksLikePersonal1040\(raw\) \|\| printedLooksLikeNeverStubForm\(raw\)\) \{\s*return readPdfJsTextLayer/,
+    "a 1040 scrape is not the printed layer — pdf.js has to read it",
+  );
+  assert.match(leftoverSrc, /classifyAndExtract\(\s*blankPdf,[\s\S]{0,80}"blank\.pdf"/);
+  assert.doesNotMatch(
+    leftoverSrc,
+    /classifyAndExtract\(\s*blankPdf,[\s\S]{0,80}\bname\b/,
+    "a failed layer must not wear the real packet name",
+  );
+  assert.doesNotMatch(
+    leftoverSrc,
+    /classifyAndExtract\(\s*dropped,[\s\S]{0,80}garbledLook/,
+    "guest extract must not run against the opening look",
+  );
+  assert.match(leftoverSrc, /received without extract is not the card/);
+  assert.doesNotMatch(
+    leftoverSrc,
+    /const guestStart = applyExtractWrite\([^)]*readerMap: garbled/,
+    "guest /start leftover must not hand a finished map to applyExtractWrite",
+  );
+  assert.doesNotMatch(
+    leftoverSrc,
+    /async read\(\) \{[\s\S]{0,400}kind: "schedule_c", value: "Vouch Eim Soy"/,
+    "a look adapter must not return the finished three-business card",
+  );
+  console.log(
+    "assert-reader-writer-split: map only · stub triple · 1040/8879/540/7203/K-1 never stub · Use this writes a reader line · Skip empty · no Paystubs in",
+  );
+}
+
+void main();

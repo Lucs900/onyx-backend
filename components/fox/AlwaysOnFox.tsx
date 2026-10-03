@@ -10,12 +10,15 @@ import {
   useState,
   useSyncExternalStore,
   type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
   type FocusEvent,
   type FormEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { AdvisorMark } from "@/components/AdvisorMark";
+import { accountFileHasStoredContent } from "@/lib/account/core";
 import { FOX_KEYBOARD_EVENT, scrollDeltaToFollowLastLine } from "./askReveal";
 import { readScenario } from "@/components/products/scenario";
 import {
@@ -36,26 +39,125 @@ import {
   promptCopy,
   replyToMessage,
 } from "./script";
+import { addressConfirmPending, searchedKeyFor } from "@/lib/rateflow/fromDraft";
 import {
+  applyIdExtractAsk,
+  dropAbandonedAddressConfirm,
+  dropOnFileAddressLines,
+  dropResolvedAddressConfirmChips,
+  freezeUsedFoxTurns,
+  isReturnCardSpeech,
+  historyBubbleSpeech,
+  withoutDuplicateContractConfirm,
+  withoutDuplicateTranscriptAsk,
+  applyTranscriptSignalAsk,
+  isHistoryDocInviteText,
+  isLastYearReturnAskText,
+  isLiveFoxTurn,
+  isUseThisConfirmText,
+  liveFoxTurnIndex,
+  isReceivedStatusLine,
+  isTranscriptSignalAskText,
+  sealStoredFoxThread,
+  stripLooksRightWhileUseThisOpen,
+  dropLeftoverAmountAsksForOpenUseThis,
+  shouldHoldDocInviteForOpenUseThis,
+  threadHasOpenUseThisConfirm,
+  isIdExtractAskText,
+  isIdExtractPath,
+  isOnFileAddressLine,
+  shouldDeferNextAskForLiveCoupon,
+} from "./liveCoupon";
+import {
+  dropStreetSuggestChips,
+  parseSafePlaceAddress,
+  requestAddressSuggestions,
+  requestPlaceAddress,
+} from "./addressSuggest";
+import {
+  encodePlaceAddress,
+  isZipOnlyQuery,
+  looksLikePlaceId,
+  shouldSuggestStreets,
+  type PlaceSuggestion,
+} from "@/lib/places/address";
+import {
+  type LookupWait,
+  RATEFLOW_UI_WAIT_MS,
+  isLookupWaitLine,
+  withWaitLine,
+  withoutWaitLines,
+} from "./lookupWait";
+import { requestRateflowIfNeeded, resetRateflowSearch, takeRateflowVendorReason } from "./rateflowClient";
+import { shouldKeepStoredFoxThread, withoutTrailingSealedFoxLines } from "./persistThread";
+import {
+  californiaZipOnFile,
+  fileAddressLine,
+  isPropertyTypeAskText,
+  isSkipPropertyAddressText,
+  isSubjectAddressConfirmPending,
+  isZipOnlyFileAddress,
+  parseVolunteeredAddress,
+} from "./propertyType";
+import {
+  accountResumeIsPending,
   applyCapture,
   applyPreviewMotionControls,
   beginWorkspaceFromHero,
   continueWorkspaceFromEntry,
+  createLinkedAccount,
   emptyDraft,
   FOX_THREAD_LINE_EVENT,
   getFoxDraft,
   getFoxMessages,
   getServerDraft,
   hydrateFoxDraft,
+  loadIntakeDraft,
   markMissingAsked,
   nudgeReview,
+  resumeAccountFromQuery,
   setDraftPath,
   setDraftScenario,
   setFoxMessages,
+  setLiveQuoteResult,
   shouldResumeWorkspaceEntry,
+  getAccountSession,
+  holdAskFoxLocalPersist,
   startOverWorkspace,
   subscribeFoxDraft,
 } from "./store";
+import {
+  ACCOUNT_CODE_ASK,
+  ACCOUNT_EMAIL_ASK,
+  ACCOUNT_LOGIN_ASK,
+  ACCOUNT_PHONE_ASK,
+  ACCOUNT_SAVE_ASK,
+  ACCOUNT_SKIPPED_LINE,
+  ACCOUNT_SEND_FAILED,
+  ACCOUNT_FILE_YOURS,
+  ACCOUNT_FIRST_OFFER,
+  ACCOUNT_FIRST_WHY,
+  ACCOUNT_WHY_SENTENCE,
+  HEADER_LOGIN_EVENT,
+  LOGIN_LABEL,
+  SAVE_THIS_FILE_LABEL,
+  START_OVER_CONFIRM,
+  accountCreateWhy,
+  accountFlowOpen,
+  accountHeaderActions,
+  accountSentCopy,
+  accountSideActions,
+  accountWorkspaceReply,
+  composerPlaceholderForAccount,
+  firstAccountOfferOpen,
+  foxLineLeaksAccountSecret,
+  hasLinkedAccount,
+  isAccountMailWaitLine,
+  isSignedInThreadLeftoverLine,
+  signedInReviewStripActions,
+  signedInReviewStripOpen,
+  startOverNeedsConfirm,
+} from "./account";
 import {
   caretAfterMoneyFormat,
   confirmedMoneyText,
@@ -66,37 +168,122 @@ import {
   ensureIncomeConfirmChips,
   inertSupersededIncomeConfirms,
   lastFoxTurn,
+  receivedIdInviteIsStale,
+  standingLastLineAfterReceivedId,
+  withStaleIdInviteOffLastLine,
+  liveDeskLineOwnsPrompt,
+  deskLineAfterAccountConsume,
+  isAccountResumeLeftoverLine,
+  withDeskLineAfterAccountConsume,
+  withoutAccountResumeLeftovers,
+  intakeAskAlreadyAnswered,
+  isPricingWhenReadySpeech,
+  messagesWithLiveQuoteSpeech,
+  messagesWithRateOrReadySpeech,
+  withoutLiveQuoteSpeech,
   docReactionAsk,
+  entityIntakeAsk,
+  sameBusinessIntakeAsk,
+  scheduleEIntakeAsk,
   nextDocInvite,
+  incomeAskOpen,
   nextFoxAsk,
+  deskStripActions,
+  shouldHoldAskForLiveLine,
+  isBankUnreadAsk,
+  RECEIVED_UNREAD_ASK,
+  unreadAskActions,
+  unreadRestoreActions,
+  retainWageDocsLine,
+  isWageDocsAskText,
+  isContractExtractAskText,
+  isGovernmentIdInviteLine,
+  isPurchaseContractInviteLine,
   holdDocsAskFox,
   productIntentFromAction,
   shouldDeferStillUsefulAsk,
   structureExplainCopy,
   structureFixPrompt,
   withWorkspaceGuide,
+  PATH_ASK_TEXT,
   workspaceGreeting,
   workspacePrompt,
   workspacePromptCopy,
+  purchasePriceRepeatReply,
   workspaceUpdateCopy,
+  isAskFoxFreeQuestion,
+  workspaceAskFoxFileReply,
+  isYearsInBusinessAskText,
+  threadThroughEditedTurn,
+  findClientEditMessageId,
+  replaceClientTurn,
 } from "./workspace";
-import { requestFoxPickFile } from "./DocumentDrop";
+import {
+  ComposerAttach,
+  filesFromClipboard,
+  filesFromDataTransfer,
+  ingestDroppedFiles,
+  requestFoxPickFile,
+} from "./DocumentDrop";
+import { continueTaxReturnPacketRead } from "./taxReturnPacket";
+import { FAILED_READ_NOTE, NO_TEXT_LAYER_NOTE, receivedDropCopy, unreadDropBytesCopy } from "@/lib/docs/accept";
 import { WorkspaceFileDock } from "./FilePreview";
 import {
   DOC_INTAKE_EVENT,
   conflictActions,
   conflictAskCopy,
+  conflictAlreadySpoken,
+  hasPurchaseContractDoc,
+  isPurchaseContractConfirmPending,
+  needsPurchaseSplitAsk,
   missingAskActions,
   missingAskCopy,
   isDeadFileWriteLine,
   stillUsefulAskCopy,
   stillUsefulRefreshKey,
   layer2AskActions,
+  intakeIsCoverDrop,
+  intakeIsIdDrop,
+  governmentIdReceivedOnDocs,
+  isTranscriptOnFile,
+  canSpeakDocStamp,
+  docSpeakKeyFromName,
+  markDocStamp,
+  transcriptSpeakKey,
+  transcriptFollowUpAsk,
+  transcriptOfferDone,
+  isPacketWagesFollowLine,
+  isK1NoPersonLine,
+  k1NoPersonLine,
+  PACKET_READING_LINE,
+  returnCardLinesOnFile,
+  taxReturnPacketHoldAsk,
+  withTranscriptSpoken,
+  matchingCoverLineOnFile,
+  sameThinCoverRepeat,
   type DocIntakeDetail,
 } from "./fileWrite";
-import { DECLINING_INCOME_CAUTION } from "./qualifyingIncome";
+import {
+  alignThreadEmployerName,
+  DECLINING_INCOME_CAUTION,
+  WAGE_STUB_DROP_ASK,
+  isCoverLineProposal,
+  isEntityCashFlowProposal,
+  isSameBusinessWageEntityProposal,
+  isScheduleECashFlowProposal,
+  maybeProposeQualifyingFromTaxFile,
+} from "./qualifyingIncome";
+import {
+  canLooksRight,
+  draftHasOpenConfirmCard,
+  isLooksRightAskText,
+  shouldSpeakPendingConfirm,
+} from "./completeness";
+import { governmentIdSkipped, ID_UNREAD_ASK, isBorrowerNameConfirmPending } from "./borrowerName";
+import { whoOnLoanAskCopy, whoOnLoanSettled } from "./whoOnLoan";
 import { isUnreadNote } from "@/lib/docs/accept";
-import { fileExists, finishLineActions, inQueueEnding, reviewIsSitting } from "./motion";
+import { applyLooksRightMotion, fileExists, finishLineActions, inQueueEnding, MOTION_COPY, reviewIsSitting } from "./motion";
+import { askFoxAnswerFromFileRows, isAskFoxFileSpokenLine } from "./askFoxFile";
 import { pathFromHomeChoice } from "./homeIdle";
 import {
   FOX_DISCLOSURE,
@@ -105,6 +292,7 @@ import {
   type FoxAction,
   type FoxIntakeDraft,
   type FoxMessage,
+  type FoxPrompt,
   type IntakePath,
   type ProductIntent,
 } from "./types";
@@ -132,26 +320,27 @@ function seedWorkspaceMessages(
   hydrateFoxDraft();
   const stored = getFoxMessages();
   const live = getFoxDraft();
+  if (accountResumeIsPending()) {
+    return stored;
+  }
   if (shouldResumeWorkspaceEntry(live, stored)) {
     if (stored.length) {
       const last = stored[stored.length - 1];
       if (last?.role === "client") {
         const ask = foxAskMessage(workspacePromptCopy(workspacePrompt(live), live));
-        const next = [...stored, ask];
+        const next = dropResolvedAddressConfirmChips([...stored, ask], live);
         setFoxMessages(next);
         return next;
       }
-      return stored;
+      return dropResolvedAddressConfirmChips(withStaleIdInviteOffLastLine(stored, live), live);
     }
-    if (fileExists(live)) {
+    if (fileExists(live) || live.fileId) {
       const ask = [foxAskMessage(workspacePromptCopy(workspacePrompt(live), live))];
       setFoxMessages(ask);
       return ask;
     }
   }
-  const draft = continueWorkspaceFromEntry(path ?? null, intent ?? null, {
-    fresh: typeof window !== "undefined" && isHomepageFreshQuery(window.location.search),
-  });
+  const draft = continueWorkspaceFromEntry(path ?? null, intent ?? null);
   const greet = [foxAskMessage(workspaceGreeting(draft))];
   setFoxMessages(greet);
   return greet;
@@ -208,19 +397,96 @@ function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** A fox tail that only repeats an earlier fox line is not a new read. */
+function withoutTrailingFoxReprint(messages: FoxMessage[]): FoxMessage[] {
+  const next = messages.slice();
+  while (next.length > 1) {
+    const last = next[next.length - 1];
+    if (!last || last.role !== "fox") break;
+    const key = last.text.trim();
+    if (!key) break;
+    const earlier = next
+      .slice(0, -1)
+      .some((message) => message.role === "fox" && message.text.trim() === key);
+    if (!earlier) break;
+    next.pop();
+  }
+  return next;
+}
+
+/**
+ * The system bubble is what paints `filename · received`. If that bubble is the
+ * tail — including after a reprinted fox line — speak the card or the layer note.
+ * A return card already spoken keeps the new stamp and does not invent a missing layer.
+ */
+function paintPastReceived(messages: FoxMessage[]): FoxMessage[] {
+  const live = getFoxDraft();
+  const cut = withoutTrailingFoxReprint(messages);
+  const last = cut[cut.length - 1];
+  if (!last || !isReceivedStatusLine(last.text)) {
+    return cut.length === messages.length ? messages : cut;
+  }
+  const cardAsk =
+    live.pendingProposal && shouldSpeakPendingConfirm(live)
+      ? docReactionAsk(live) ?? nextFoxAsk(live)
+      : null;
+  const cardText = String(cardAsk?.text ?? "").trim();
+  if (cardText && !isReceivedStatusLine(cardText)) {
+    if (messages[messages.length - 1]?.text.trim() === cardText) return messages;
+    return [
+      ...cut,
+      {
+        id: `${last.id}:read`,
+        role: "fox",
+        text: cardText,
+      },
+    ];
+  }
+  const noPersonReason =
+    returnCardLinesOnFile(live).length > 0 && live.k1PaperNoPerson && !live.pendingProposal
+      ? k1NoPersonLine(live.k1PaperNoPerson)
+      : "";
+  const noPersonSpoken =
+    Boolean(noPersonReason) &&
+    cut.some((message) => message.role === "fox" && message.text.trim() === noPersonReason);
+  if (noPersonReason && !noPersonSpoken) {
+    return [
+      ...cut,
+      {
+        id: `${last.id}:read`,
+        role: "fox",
+        text: noPersonReason,
+      },
+    ];
+  }
+  if (returnCardLinesOnFile(live).length > 0) {
+    return cut.length === messages.length ? messages : cut;
+  }
+  const spoken = NO_TEXT_LAYER_NOTE;
+  if (messages[messages.length - 1]?.text.trim() === spoken) return messages;
+  return [
+    ...cut,
+    {
+      id: `${last.id}:read`,
+      role: "fox",
+      text: spoken,
+    },
+  ];
+}
+
 function foxAskMessage(ask: {
   text: string;
   followUp?: string;
   facts?: FoxMessage["facts"];
   actions?: FoxAction[];
 }): FoxMessage {
+  const onFile = /\bon the file\.?\s*$/i.test((ask.text ?? "").trim());
   return {
     id: newId(),
     role: "fox",
     text: ask.text,
-    followUp: ask.followUp,
+    followUp: onFile ? undefined : ask.followUp,
     facts: ask.facts,
-    actions: ask.actions,
   };
 }
 
@@ -230,10 +496,6 @@ function dropFoxActions(messages: FoxMessage[]) {
       ? { ...message, actions: undefined }
       : message,
   );
-}
-
-function actionKey(action: FoxAction) {
-  return `${action.id}:${action.label}:${action.capture?.field ?? ""}`;
 }
 
 function sameFoxAsk(
@@ -250,9 +512,229 @@ function sameFoxAsk(
   const left = (last.facts ?? []).map((fact) => `${fact.id}:${fact.value}`).join("\n");
   const right = (ask.facts ?? []).map((fact) => `${fact.id}:${fact.value}`).join("\n");
   if (left !== right) return false;
-  const leftActions = (last.actions ?? []).map(actionKey).join("|");
-  const rightActions = (ask.actions ?? []).map(actionKey).join("|");
-  return leftActions === rightActions;
+  return true;
+}
+
+function lastFoxIsUnread(messages: FoxMessage[]) {
+  const last = lastFoxTurn(messages);
+  if (!last) return false;
+  return (
+    last.text === FAILED_READ_NOTE ||
+    last.text === RECEIVED_UNREAD_ASK ||
+    last.text.startsWith("Unread — ")
+  );
+}
+
+function lastFoxIsOpenUseThis(messages: FoxMessage[]) {
+  const index = liveFoxTurnIndex(messages);
+  if (index < 0 || !isUseThisConfirmText(messages[index]?.text)) return false;
+  return isLiveFoxTurn(messages, index);
+}
+
+function returnCardHoldsAccountAsk(
+  draft: FoxIntakeDraft,
+  ask: { text: string; actions?: FoxAction[] },
+) {
+  if (returnCardLinesOnFile(draft).length === 0) return false;
+  const text = ask.text.trim();
+  if (!text || text === ACCOUNT_FIRST_OFFER || text === PACKET_READING_LINE) return true;
+  return (ask.actions ?? []).some(
+    (action) =>
+      action.label === "Create account" || action.label === "Log in" || action.label === "Not now",
+  );
+}
+
+function withNextAskIfUsedConfirm(messages: FoxMessage[], draft: FoxIntakeDraft): FoxMessage[] {
+  const index = liveFoxTurnIndex(messages);
+  if (index >= 0 && messages[index]?.text.trim() === MOTION_COPY.escalated) {
+    return messages;
+  }
+  if (index >= 0 && isLiveFoxTurn(messages, index)) {
+    if (historyBubbleSpeech(messages[index]?.text)) return messages;
+    const ask = nextFoxAsk(draft);
+    if (!ask.text.trim() || returnCardHoldsAccountAsk(draft, ask)) return messages;
+    return sealStoredFoxThread(
+      messages.map((message, i) =>
+        i === index
+          ? { ...message, text: ask.text, followUp: ask.followUp, facts: ask.facts }
+          : message,
+      ),
+    );
+  }
+  const ask = nextFoxAsk(draft);
+  if (returnCardHoldsAccountAsk(draft, ask)) return messages;
+  if (ask.text.trim() && !isUseThisConfirmText(ask.text)) {
+    return sealStoredFoxThread([...messages, foxAskMessage(ask)]);
+  }
+  if ((ask.actions ?? []).length && ask.text.trim()) {
+    return sealStoredFoxThread([...messages, foxAskMessage(ask)]);
+  }
+  return sealStoredFoxThread([
+    ...messages,
+    foxAskMessage({
+      text: "I’m here. Type below, or tap a reply.",
+      actions: [
+        { id: "skip-docs", label: "Skip", event: "bubble", capture: { field: "skip-docs" } },
+      ],
+    }),
+  ]);
+}
+
+function applyFoxAsk(
+  messages: FoxMessage[],
+  ask: {
+    text: string;
+    followUp?: string;
+    facts?: FoxMessage["facts"];
+    actions?: FoxAction[];
+  },
+): FoxMessage[] {
+  const live = getFoxDraft();
+  if (returnCardHoldsAccountAsk(live, ask)) {
+    return freezeUsedFoxTurns(messages);
+  }
+  if (
+    isGovernmentIdInviteLine(ask.text) &&
+    governmentIdReceivedOnDocs(live) &&
+    !isBorrowerNameConfirmPending(live)
+  ) {
+    const next = nextFoxAsk(live);
+    if (next.text.trim() && !isGovernmentIdInviteLine(next.text)) {
+      ask = next;
+    }
+  }
+  const last = lastFoxTurn(messages);
+  if (last && receivedIdInviteIsStale(last.text, live)) {
+    const standing = standingLastLineAfterReceivedId(live, messages);
+    if (standing.text.trim() && standing.text.trim() !== last.text.trim()) {
+      return freezeUsedFoxTurns([...messages, foxAskMessage(standing)]);
+    }
+    return freezeUsedFoxTurns(messages);
+  }
+  if (last && isAskFoxFileSpokenLine(last.text)) {
+    if (!/Use this\??$|Period \$|Got the |I'm suggesting/i.test(ask.text)) {
+      return freezeUsedFoxTurns(messages);
+    }
+  }
+  if (isLastYearReturnAskText(ask.text) && lastFoxIsUnread(messages)) {
+    return freezeUsedFoxTurns(messages);
+  }
+  if (isTranscriptSignalAskText(ask.text)) {
+    const live = getFoxDraft();
+    const key = transcriptSpeakKey(live);
+    const painted = applyTranscriptSignalAsk(messages, foxAskMessage(ask), live);
+    if (canSpeakDocStamp(live, key, "named") || canSpeakDocStamp(live, key, "offered")) {
+      loadIntakeDraft(withTranscriptSpoken(live));
+    }
+    return painted;
+  }
+  if (
+    isHistoryDocInviteText(ask.text) &&
+    messages.some((message) => message.role === "fox" && isTranscriptSignalAskText(message.text))
+  ) {
+    return freezeUsedFoxTurns(messages);
+  }
+  const liveActions = lastFoxTurn(freezeUsedFoxTurns(messages))?.actions;
+  const freezeOthers = (keepId: string, replacement: FoxMessage) =>
+    freezeUsedFoxTurns(
+      messages.map((message) => (message.id === keepId ? replacement : message)),
+    );
+  if (last && retainWageDocsLine(last.text, ask.text)) {
+    return freezeOthers(last.id, {
+      ...last,
+      followUp: ask.followUp,
+      facts: ask.facts,
+      actions: undefined,
+    });
+  }
+  if (last && isWageDocsAskText(last.text) && !isWageDocsAskText(ask.text)) {
+    return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (
+    last &&
+    (last.text === WAGE_STUB_DROP_ASK || /^Drop a recent paystub\b/i.test(last.text)) &&
+    ask.text !== last.text &&
+    ask.text !== WAGE_STUB_DROP_ASK
+  ) {
+    return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (isIdExtractAskText(ask.text)) {
+    if (lastFoxIsOpenUseThis(messages) && shouldHoldDocInviteForOpenUseThis(last?.text, liveActions, ask.text)) {
+      return freezeUsedFoxTurns(messages);
+    }
+    return applyIdExtractAsk(messages, foxAskMessage(ask));
+  }
+  if (isOnFileAddressLine({ id: last?.id ?? "on-file", role: "fox", text: ask.text })) {
+    return freezeUsedFoxTurns(dropOnFileAddressLines(messages));
+  }
+  if (last && isGovernmentIdInviteLine(last.text) && ask.text !== last.text) {
+    if (governmentIdReceivedOnDocs(live) && !isBorrowerNameConfirmPending(live)) {
+      return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
+    }
+    return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (last && isPurchaseContractInviteLine(last.text) && isContractExtractAskText(ask.text)) {
+    return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (last && /The ID shows /i.test(last.text) && !/The ID shows /i.test(ask.text)) {
+    return freezeOthers(last.id, foxAskMessage(ask));
+  }
+  if (last && isPropertyTypeAskText(last.text) && isPropertyTypeAskText(ask.text)) {
+    return freezeOthers(last.id, {
+      ...last,
+      text: ask.text,
+      actions: undefined,
+    });
+  }
+  if (last && isLooksRightAskText(last.text) && isLooksRightAskText(ask.text)) {
+    return freezeOthers(last.id, {
+      ...last,
+      text: ask.text,
+      actions: undefined,
+    });
+  }
+  if (isContractExtractAskText(ask.text)) {
+    const held = withoutDuplicateContractConfirm(messages);
+    const existing = lastFoxTurn(held);
+    if (existing && isContractExtractAskText(existing.text)) {
+      return freezeUsedFoxTurns(
+        held.map((message) =>
+          message.id === existing.id
+            ? {
+                ...existing,
+                actions: undefined,
+              }
+            : message,
+        ),
+      );
+    }
+  }
+  if (last && isContractExtractAskText(last.text) && !isContractExtractAskText(ask.text)) {
+    return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
+  }
+  if (last && lastFoxIsOpenUseThis(messages) && ask.text !== last.text) {
+    return freezeUsedFoxTurns(messages);
+  }
+  if (last && sameFoxAsk(last, ask)) return freezeUsedFoxTurns(messages);
+  if (/Use this\?$/.test(ask.text.trim()) && ask.actions?.length) {
+    const cut = dropLeftoverAmountAsksForOpenUseThis(messages);
+    const lastCut = lastFoxTurn(cut);
+    if (lastCut && sameFoxAsk(lastCut, ask)) return freezeUsedFoxTurns(cut);
+    return freezeUsedFoxTurns([...cut, foxAskMessage(ask)]);
+  }
+  if (last && isLookupWaitLine(last.text) && ask.text === "How is income earned?") {
+    return freezeUsedFoxTurns(messages);
+  }
+  if (isYearsInBusinessAskText(ask.text)) {
+    const withoutYears = messages.filter(
+      (item) => !(item.role === "fox" && isYearsInBusinessAskText(item.text)),
+    );
+    return freezeUsedFoxTurns([...withoutYears, foxAskMessage(ask)]);
+  }
+  if (last && lastFoxIsOpenUseThis(messages) && shouldHoldDocInviteForOpenUseThis(last.text, liveActions, ask.text)) {
+    return freezeUsedFoxTurns(messages);
+  }
+  return freezeUsedFoxTurns([...messages, foxAskMessage(ask)]);
 }
 
 function hasReviewAsk(messages: FoxMessage[]) {
@@ -263,6 +745,9 @@ function hasReviewAsk(messages: FoxMessage[]) {
         message.text.includes("Here’s a sample structure.") ||
         /here.?s the file/i.test(message.text) ||
         /notepad looks complete/i.test(message.text) ||
+        /the file looks like this/i.test(message.text) ||
+        /looks right, or change a line/i.test(message.text) ||
+        /these numbers look right/i.test(message.text) ||
         /does it look right/i.test(message.text)),
   );
 }
@@ -271,7 +756,7 @@ function hasPreparedAsk(messages: FoxMessage[]) {
   return messages.some(
     (message) =>
       message.role === "fox" &&
-      (/these docs help next|upload what you have|still useful:|this file can move|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
+      (/these docs help next|upload what you have|still useful:|this file can move|i can send this to review|onyx has this for review|holding\. i.?ll keep|licensed originator is on this exception|i need .+ from you|what.?s a good email|file is prepared/i.test(
         message.text,
       )),
   );
@@ -290,7 +775,7 @@ function withUpdatedStillUsefulAsk(messages: FoxMessage[], live: FoxIntakeDraft)
   if (index < 0) return [...messages, ask];
   const at = messages.length - 1 - index;
   return messages.map((message, idx) =>
-    idx === at ? { ...message, text: ask.text, actions: ask.actions } : message,
+    idx === at ? { ...message, text: ask.text, actions: undefined } : message,
   );
 }
 
@@ -310,6 +795,10 @@ export function requestFoxExplain(field: string) {
   window.dispatchEvent(new CustomEvent("onyx:fox-explain", { detail: { field } }));
 }
 
+export function requestSaveThisFile() {
+  window.dispatchEvent(new CustomEvent("onyx:fox-save-file"));
+}
+
 function clientMoneyText(text: string, capture?: { field: string }) {
   if (capture?.field === "propose-funds" || capture?.field === "downPayment") {
     return text;
@@ -324,6 +813,12 @@ function structureWriteCapture(field?: string) {
   return (
     field != null &&
     field !== "correct" &&
+    field !== "propertyValue" &&
+    field !== "downPayment" &&
+    field !== "loanAmount" &&
+    field !== "skip-value" &&
+    field !== "skip-amount" &&
+    field !== "skip-down" &&
     field !== "propose-funds" &&
     field !== "accept-proposal" &&
     field !== "change-proposal" &&
@@ -360,86 +855,87 @@ export function FoxLauncher() {
   );
 }
 
+/** History is speech. This function must never mount chip buttons on a message node. */
 function FoxThread({
   messages,
+  draft,
   listRef,
-  onAction,
   onEdit,
 }: {
   messages: FoxMessage[];
+  draft: FoxIntakeDraft;
   listRef: { current: HTMLDivElement | null };
-  onAction: (action: FoxAction) => void;
-  onEdit?: (message: FoxMessage) => void;
+  onEdit?: (prompt: FoxPrompt, line?: string, messageId?: string) => void;
 }) {
-  const currentFox = messages.reduce((index, message, i) => (message.role === "fox" ? i : index), -1);
-
+  const [editOpenId, setEditOpenId] = useState<string | null>(null);
+  const thread = paintPastReceived(
+    sealStoredFoxThread(
+      dropStreetSuggestChips(
+        dropAbandonedAddressConfirm(
+          dropResolvedAddressConfirmChips(
+            withoutAccountResumeLeftovers(withoutDuplicateTranscriptAsk(messages), draft),
+            draft,
+          ),
+          draft,
+        ),
+      ),
+    ),
+  );
   return (
-    <div className="fox-panel__thread" ref={listRef} aria-live="polite">
-      {messages.map((message, index) => {
+    <div className="fox-panel__thread" ref={listRef} aria-live="polite" data-history="speech">
+      {thread.map((message, index) => {
         if (message.role === "system") {
           return (
             <p key={message.id} className="fox-bubble fox-bubble--system">
-              {message.text}
+              {historyBubbleSpeech(message.text)}
             </p>
           );
         }
-        const current = message.role === "fox" && index === currentFox;
+        const current =
+          message.role === "fox" &&
+          isLiveFoxTurn(thread, index) &&
+          !isReceivedStatusLine(message.text);
         const tone = current ? " is-current" : " is-prior";
+        const canEdit = message.role === "client" && Boolean(message.edit) && Boolean(onEdit);
+        const speech = historyBubbleSpeech(message.text);
+        const returnCardRows = isReturnCardSpeech(message.text);
+        const speechRows = returnCardRows
+          ? speech.split("\n").map((row) => row.trim()).filter(Boolean)
+          : [speech];
+        const followUp = message.followUp ? historyBubbleSpeech(message.followUp) : "";
         return (
           <article
-            key={message.id}
+            key={`${message.id}:${current ? "live" : "text"}`}
             className={
               message.role === "fox"
                 ? `fox-bubble fox-bubble--fox${tone}`
-                : "fox-bubble fox-bubble--client"
+                : `fox-bubble fox-bubble--client is-used${editOpenId === message.id ? " is-edit-open" : ""}`
             }
             aria-current={current ? "step" : undefined}
+            onClick={
+              canEdit
+                ? () => {
+                    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+                    setEditOpenId((id) => (id === message.id ? null : message.id));
+                  }
+                : undefined
+            }
           >
-            <p>{message.text}</p>
-            {message.followUp ? <p>{message.followUp}</p> : null}
-            {message.role === "client" && message.edit && onEdit ? (
+            {speechRows.map((row, rowIndex) => (
+              <p key={`${message.id}-row-${rowIndex}`}>{row}</p>
+            ))}
+            {followUp ? <p>{followUp}</p> : null}
+            {canEdit ? (
               <button
                 type="button"
                 className="fox-bubble__edit"
-                onClick={() => onEdit(message)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onEdit?.(message.edit as FoxPrompt, message.editLine, message.id);
+                }}
               >
                 Edit
               </button>
-            ) : null}
-            {current &&
-            message.actions?.length &&
-            (message.text.trim() || (message.followUp ?? "").trim()) ? (
-              <div className="fox-bubble__actions">
-                {message.actions.map((action) =>
-                  action.href ? (
-                    <Link
-                      key={action.id}
-                      href={action.href}
-                      className={
-                        action.quiet
-                          ? "btn btn--secondary fox-chip is-quiet"
-                          : "btn btn--secondary fox-chip"
-                      }
-                      onClick={() => persistPathFromHref(action.href as string)}
-                    >
-                      {action.label}
-                    </Link>
-                  ) : (
-                    <button
-                      key={action.id}
-                      type="button"
-                      className={
-                        action.quiet
-                          ? "btn btn--secondary fox-chip is-quiet"
-                          : "btn btn--secondary fox-chip"
-                      }
-                      onClick={() => onAction(action)}
-                    >
-                      {action.label}
-                    </button>
-                  ),
-                )}
-              </div>
             ) : null}
           </article>
         );
@@ -448,40 +944,162 @@ function FoxThread({
   );
 }
 
+function FoxLiveStrip({
+  messages,
+  draft,
+  onAction,
+}: {
+  messages: FoxMessage[];
+  draft: FoxIntakeDraft;
+  onAction: (action: FoxAction) => void;
+}) {
+  const actions = deskStripActions(messages, draft);
+  if (!actions.length) return null;
+  return (
+    <div className="fox-bar__strip" role="toolbar" aria-label="Live actions">
+      {actions.map((action) =>
+        action.href ? (
+          <Link
+            key={action.id}
+            href={action.href}
+            className={
+              action.quiet ? "btn btn--secondary fox-chip is-quiet" : "btn btn--secondary fox-chip"
+            }
+            onClick={() => persistPathFromHref(action.href as string)}
+          >
+            {action.label}
+          </Link>
+        ) : (
+          <button
+            key={action.id}
+            type="button"
+            className={
+              action.quiet ? "btn btn--secondary fox-chip is-quiet" : "btn btn--secondary fox-chip"
+            }
+            onClick={() => onAction(action)}
+          >
+            {action.label}
+          </button>
+        ),
+      )}
+    </div>
+  );
+}
+
+function FoxAccountStrip({
+  draft,
+  onAction,
+}: {
+  draft: FoxIntakeDraft;
+  onAction: (action: FoxAction) => void;
+}) {
+  if (!accountFlowOpen(draft)) return null;
+  const actions = accountSideActions(draft);
+  if (!actions.length) return null;
+  return (
+    <div className="fox-bar__strip fox-bar__strip--account" role="toolbar" aria-label="Account">
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          type="button"
+          className={
+            action.quiet ? "btn btn--secondary fox-chip is-quiet" : "btn btn--secondary fox-chip"
+          }
+          onClick={() => onAction(action)}
+        >
+          {action.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function transferHasFiles(data: DataTransfer | null | undefined) {
+  if (!data) return false;
+  return Array.from(data.types ?? []).includes("Files") || Boolean(data.files?.length);
+}
+
+function onComposerFileDrag(event: DragEvent<HTMLElement>) {
+  if (!transferHasFiles(event.dataTransfer)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+}
+
+function onComposerFileDrop(event: DragEvent<HTMLElement>) {
+  const files = filesFromDataTransfer(event.dataTransfer);
+  if (!files.length) return;
+  event.preventDefault();
+  event.stopPropagation();
+  void ingestDroppedFiles(files);
+}
+
+function onComposerFilePaste(event: ClipboardEvent<HTMLElement>) {
+  const files = filesFromClipboard(event.clipboardData);
+  if (!files.length) return;
+  event.preventDefault();
+  void ingestDroppedFiles(files);
+}
+
 function FoxWorkspace({
   className,
   messages,
+  draft,
   listRef,
   onClose,
-  onAction,
   onEdit,
   composer,
   hideClose,
   stickyDisclosure,
   onStartOver,
+  onAction,
 }: {
   className: string;
   messages: FoxMessage[];
+  draft: FoxIntakeDraft;
   listRef: { current: HTMLDivElement | null };
   onClose: () => void;
-  onAction: (action: FoxAction) => void;
-  onEdit?: (message: FoxMessage) => void;
+  onEdit?: (prompt: FoxPrompt, line?: string, messageId?: string) => void;
   composer?: ReactNode;
   hideClose?: boolean;
   stickyDisclosure?: boolean;
   onStartOver?: () => void;
+  onAction?: (action: FoxAction) => void;
 }) {
+  const homeChips = onStartOver ? accountHeaderActions(draft) : [];
   return (
-    <div id="fox-panel" className={className}>
+    <div
+      id="fox-panel"
+      className={className}
+      data-composer-drop="true"
+      onDragEnter={onComposerFileDrag}
+      onDragOver={onComposerFileDrag}
+      onDrop={onComposerFileDrop}
+      onPaste={onComposerFilePaste}
+    >
       <div className="fox-bar__head">
         <div className="fox-bar__head-copy">
           <span className="fox-bar__title">ONYX Fox</span>
           {stickyDisclosure ? <p className="fox-bar__disclosure">{FOX_DISCLOSURE}</p> : null}
         </div>
         {onStartOver ? (
-          <button type="button" className="fox-bar__start-over" onClick={onStartOver}>
-            Start over
-          </button>
+          <div className="fox-bar__start-over-row">
+            {onAction
+              ? homeChips.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className="fox-bar__account-home"
+                    onClick={() => onAction(action)}
+                  >
+                    {action.label}
+                  </button>
+                ))
+              : null}
+            <button type="button" className="fox-bar__start-over" onClick={onStartOver}>
+              Start over
+            </button>
+          </div>
         ) : hideClose ? null : (
           <button
             type="button"
@@ -494,7 +1112,7 @@ function FoxWorkspace({
           </button>
         )}
       </div>
-      <FoxThread messages={messages} listRef={listRef} onAction={onAction} onEdit={onEdit} />
+      <FoxThread messages={messages} draft={draft} listRef={listRef} onEdit={onEdit} />
       {composer}
     </div>
   );
@@ -520,6 +1138,7 @@ export function AlwaysOnFox({
   const isHome = stage === "home" || pathname === "/";
   const workspaceSurface = isStart || isHome;
   const draft = useSyncExternalStore(subscribeFoxDraft, getFoxDraft, getServerDraft);
+  const rateflowKey = searchedKeyFor(draft) ?? "";
   const [open, setOpen] = useState(() => isStart || isHome || stage === "intake");
   const [ready, setReady] = useState(() => workspaceSurface);
   const [search, setSearch] = useState(() => {
@@ -539,11 +1158,18 @@ export function AlwaysOnFox({
   );
   const pendingAsk = useRef<string | null>(null);
   const skipPromptSync = useRef(workspaceSurface);
+  const holdAskFoxPaint = useRef(false);
+  const paintedAskFoxText = useRef("");
   const previewControlKey = useRef("");
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef<number | null>(null);
+  const [lookupWait, setLookupWait] = useState<LookupWait | null>(null);
+  const [streetSuggestions, setStreetSuggestions] = useState<PlaceSuggestion[]>([]);
+  const placesWaitGen = useRef(0);
+  const placesSuggestFrozen = useRef(false);
   const fieldId = useId();
+  const suggestId = useId();
   const greetKey = `${pathname}${search}`;
   const useHomeStage = Boolean(homeStage);
 
@@ -551,17 +1177,91 @@ export function AlwaysOnFox({
     prev: FoxMessage[],
     next: FoxMessage[] | ((prev: FoxMessage[]) => FoxMessage[]),
   ) => {
-    const resolved = ensureIncomeConfirmChips(
-      inertSupersededIncomeConfirms(typeof next === "function" ? next(prev) : next),
-      getFoxDraft(),
-    );
     const live = getFoxDraft();
+    const resolved = withStaleIdInviteOffLastLine(
+      stripLooksRightWhileUseThisOpen(
+        ensureIncomeConfirmChips(
+          inertSupersededIncomeConfirms(typeof next === "function" ? next(prev) : next),
+          live,
+        ),
+        live,
+      ),
+      live,
+    );
     const stored = getFoxMessages();
-    if (fileExists(live) && stored.length > resolved.length) {
-      return ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live);
+    const storedLast = lastFoxTurn(stored);
+    const resolvedLast = lastFoxTurn(resolved);
+    const storedStaleId = Boolean(storedLast && receivedIdInviteIsStale(storedLast.text, live));
+    const resolvedHasReceipt = resolved.some(
+      (message) => message.role === "system" && /received/i.test(message.text),
+    );
+    const resolvedIsExtractConfirm = Boolean(
+      resolvedLast && /Use this\??$|Period \$|Got the /i.test(resolvedLast.text),
+    );
+    const resolvedIsRequestHuman = resolvedLast?.text.trim() === MOTION_COPY.escalated;
+    if (
+      paintedAskFoxText.current &&
+      storedLast &&
+      storedLast.text.trim() === paintedAskFoxText.current.trim() &&
+      !resolvedHasReceipt &&
+      !resolvedIsExtractConfirm &&
+      !resolvedIsRequestHuman &&
+      !storedStaleId
+    ) {
+      return stored;
     }
-    setFoxMessages(resolved);
-    return resolved;
+    const storedFileRead = Boolean(storedLast && isAskFoxFileSpokenLine(storedLast.text));
+    const resolvedFileRead = Boolean(resolvedLast && isAskFoxFileSpokenLine(resolvedLast.text));
+    if (
+      storedFileRead &&
+      resolvedLast &&
+      storedLast!.text.trim() !== resolvedLast.text.trim() &&
+      !(resolvedFileRead && resolved.length > stored.length) &&
+      !resolvedHasReceipt &&
+      !resolvedIsExtractConfirm &&
+      !resolvedIsRequestHuman &&
+      !storedStaleId
+    ) {
+      return stored;
+    }
+    if (
+      shouldKeepStoredFoxThread(stored, resolved, {
+        fileExists: fileExists(live),
+        isIdExtractPath: isIdExtractPath(live),
+        idExtractAsk: resolved.some((message) => isIdExtractAskText(message.text)),
+      }) &&
+      !resolved.some((message) => isAskFoxFileSpokenLine(message.text))
+    ) {
+      return alignThreadEmployerName(
+        sealStoredFoxThread(
+          dropStreetSuggestChips(
+            dropAbandonedAddressConfirm(
+              dropResolvedAddressConfirmChips(
+                stripLooksRightWhileUseThisOpen(
+                  ensureIncomeConfirmChips(inertSupersededIncomeConfirms(stored), live),
+                  live,
+                ),
+                live,
+              ),
+              live,
+            ),
+          ),
+        ),
+        live,
+      );
+    }
+    const held = paintPastReceived(
+      alignThreadEmployerName(
+        sealStoredFoxThread(
+          dropStreetSuggestChips(
+            dropAbandonedAddressConfirm(dropResolvedAddressConfirmChips(resolved, live), live),
+          ),
+        ),
+        live,
+      ),
+    );
+    setFoxMessages(held);
+    return held;
   };
 
   const commitMessages = (
@@ -580,12 +1280,56 @@ export function AlwaysOnFox({
 
   useLayoutEffect(() => {
     if (!isStart) return;
+    if (holdAskFoxPaint.current) return;
     hydrateFoxDraft();
     const stored = getFoxMessages();
     const live = getFoxDraft();
     if (!shouldResumeWorkspaceEntry(live, stored) || !stored.length) return;
-    setMessages(stored);
+    if (isIdExtractPath(live) && !governmentIdReceivedOnDocs(live)) return;
+    if (live.documents.some((doc) => doc.status === "reading")) return;
+    setMessages(
+      paintPastReceived(
+        sealStoredFoxThread(
+          dropResolvedAddressConfirmChips(withStaleIdInviteOffLastLine(stored, live), live),
+        ),
+      ),
+    );
   }, [isStart, draft.motion, draft.updatedAt]);
+
+  useEffect(() => {
+    if (!isStart) return;
+    const onDrag = (event: globalThis.DragEvent) => {
+      if (!transferHasFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
+    const onDrop = (event: globalThis.DragEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-composer-drop], .fox-bar__desk")) {
+        return;
+      }
+      const files = filesFromDataTransfer(event.dataTransfer);
+      if (!files.length) return;
+      event.preventDefault();
+      void ingestDroppedFiles(files);
+    };
+    const onPaste = (event: globalThis.ClipboardEvent) => {
+      const files = filesFromClipboard(event.clipboardData);
+      if (!files.length) return;
+      event.preventDefault();
+      void ingestDroppedFiles(files);
+    };
+    document.addEventListener("dragenter", onDrag);
+    document.addEventListener("dragover", onDrag);
+    document.addEventListener("drop", onDrop);
+    document.addEventListener("paste", onPaste);
+    return () => {
+      document.removeEventListener("dragenter", onDrag);
+      document.removeEventListener("dragover", onDrag);
+      document.removeEventListener("drop", onDrop);
+      document.removeEventListener("paste", onPaste);
+    };
+  }, [isStart]);
 
   useLayoutEffect(() => {
     const syncStage = () => {
@@ -678,7 +1422,14 @@ export function AlwaysOnFox({
       applyCapture({ field: "correct", value: prompt, line: field });
       const live = getFoxDraft();
       const ask = workspacePromptCopy(prompt, live);
-      commitMessages((prev) => [...dropFoxActions(prev), foxAskMessage(ask)]);
+      commitMessages((prev) => {
+        const priceEdit = prompt === "value" || field === "price";
+        const editedId = priceEdit ? findClientEditMessageId(prev, prompt, field) : undefined;
+        const kept = editedId ? threadThroughEditedTurn(prev, editedId) : prev;
+        const stripped = dropFoxActions(kept);
+        if (priceEdit) return stripped;
+        return [...stripped, foxAskMessage(ask)];
+      });
     };
     const onExplain = (event: Event) => {
       const field = String((event as CustomEvent<{ field?: string }>).detail?.field ?? "").trim();
@@ -694,15 +1445,86 @@ export function AlwaysOnFox({
       if (!isStart) return;
       const detail = (event as CustomEvent<DocIntakeDetail>).detail ?? {};
       skipPromptSync.current = true;
-      commitMessages((prev) => {
+      commitMessages((prev) =>
+        paintPastReceived(
+          (() => {
         const next = [...prev];
+        if (detail.received) {
+          const name = String(detail.received.name ?? "").trim();
+          if (name) {
+            const live = getFoxDraft();
+            const key = docSpeakKeyFromName(live, name);
+            if (canSpeakDocStamp(live, key, "received")) {
+              next.push({ id: newId(), role: "system", text: receivedDropCopy(name) });
+              loadIntakeDraft(markDocStamp(live, key, "received"));
+            }
+          }
+          if (!detail.extractClass && !detail.emptyRead && !(detail.quietLines ?? []).length) {
+            return next;
+          }
+        }
         if (detail.reject) {
           next.push({ id: newId(), role: "system", text: detail.reject });
+          if (!detail.extractClass && !detail.emptyRead && !(detail.quietLines ?? []).length) {
+            return next;
+          }
         }
         for (const line of detail.quietLines ?? []) {
           if (line === DECLINING_INCOME_CAUTION) continue;
           if (isDeadFileWriteLine(line)) continue;
+          // emptyRead speaks this note as the fox line. A second system copy is the same sentence twice.
+          if (detail.emptyRead && isUnreadNote(line)) continue;
           next.push({ id: newId(), role: "system", text: line });
+        }
+        const intakeDraft = getFoxDraft();
+        const coverDrop = intakeIsCoverDrop(intakeDraft, detail);
+        if (coverDrop) {
+          const kept = next.filter((message) => !isUnreadNote(message.text) && message.text !== ID_UNREAD_ASK);
+          const reaction = docReactionAsk(intakeDraft, "tax_return");
+          const keptCover =
+            isCoverLineProposal(intakeDraft.pendingProposal) &&
+            (matchingCoverLineOnFile(intakeDraft) || sameThinCoverRepeat(intakeDraft));
+          const coverAsk = keptCover
+            ? nextFoxAsk(intakeDraft)
+            : reaction ?? workspacePromptCopy(workspacePrompt(intakeDraft), intakeDraft);
+          return applyFoxAsk(kept, coverAsk);
+        }
+        const idDrop =
+          intakeIsIdDrop(intakeDraft, detail) ||
+          (isBorrowerNameConfirmPending(intakeDraft) && intakeIsIdDrop(intakeDraft, { extractClass: "government_id" }));
+        if (idDrop) {
+          const unreadId =
+            Boolean(detail.emptyRead) ||
+            (detail.quietLines ?? []).some((line) => isUnreadNote(line));
+          if (
+            unreadId &&
+            !isBorrowerNameConfirmPending(intakeDraft) &&
+            !(governmentIdSkipped(intakeDraft) && !detail.emptyRead)
+          ) {
+            return applyFoxAsk(next, {
+              text: ID_UNREAD_ASK,
+              actions: unreadRestoreActions(intakeDraft),
+            });
+          }
+          const reaction = docReactionAsk(intakeDraft, "government_id");
+          const ask =
+            intakeDraft.pendingConflict && !conflictAlreadySpoken(intakeDraft)
+              ? {
+                  text: conflictAskCopy(intakeDraft.pendingConflict),
+                  actions: conflictActions(intakeDraft.pendingConflict),
+                }
+              : reaction ?? nextFoxAsk(intakeDraft);
+          return applyFoxAsk(next, ask);
+        }
+        if (detail.emptyRead) {
+          const live = getFoxDraft();
+          const unreadLine = (detail.quietLines ?? []).find((line) => isUnreadNote(line));
+          return applyFoxAsk(next, {
+            text: isBankUnreadAsk(live)
+              ? RECEIVED_UNREAD_ASK
+              : unreadLine || unreadDropBytesCopy(detail.emptyRead.name, detail.emptyRead.size),
+            actions: unreadLine ? unreadAskActions(live) : unreadRestoreActions(live),
+          });
         }
         if (
           (detail.quietLines ?? []).some((line) => isUnreadNote(line)) &&
@@ -714,9 +1536,66 @@ export function AlwaysOnFox({
           !getFoxDraft().awaitingRaiseWhen &&
           !getFoxDraft().awaitingRaiseYtdFar
         ) {
-          return next;
+          const live = getFoxDraft();
+          const unreadLine = (detail.quietLines ?? []).find((line) => isUnreadNote(line));
+          return applyFoxAsk(next, {
+            text: isBankUnreadAsk(live) ? RECEIVED_UNREAD_ASK : unreadLine || FAILED_READ_NOTE,
+            actions: unreadAskActions(live),
+          });
         }
-        if (detail.conflict) {
+        const noPersonLine = (detail.quietLines ?? []).find((line) => isK1NoPersonLine(line));
+        if (noPersonLine && !detail.conflict && !getFoxDraft().pendingProposal) {
+          const withoutReason = next.filter((message) => !isK1NoPersonLine(message.text));
+          return applyFoxAsk(withoutReason, { text: noPersonLine });
+        }
+        const scheduleEDraft = (() => {
+          const current = getFoxDraft();
+          if (isTranscriptOnFile(current)) return current;
+          if (
+            isScheduleECashFlowProposal(current.pendingProposal) ||
+            isEntityCashFlowProposal(current.pendingProposal) ||
+            isSameBusinessWageEntityProposal(current.pendingProposal)
+          ) {
+            return current;
+          }
+          if (detail.extractClass !== "tax_return" && detail.extractClass !== "w2") return current;
+          const proposed = maybeProposeQualifyingFromTaxFile(current);
+          if (
+            !isScheduleECashFlowProposal(proposed.pendingProposal) &&
+            !isEntityCashFlowProposal(proposed.pendingProposal) &&
+            !isSameBusinessWageEntityProposal(proposed.pendingProposal)
+          ) {
+            return current;
+          }
+          loadIntakeDraft(proposed);
+          return proposed;
+        })();
+        const scheduleEAsk =
+          scheduleEIntakeAsk(scheduleEDraft, detail.extractClass) ??
+          entityIntakeAsk(scheduleEDraft, detail.extractClass) ??
+          sameBusinessIntakeAsk(scheduleEDraft, detail.extractClass);
+        if (scheduleEAsk) {
+          return applyFoxAsk(next, scheduleEAsk);
+        }
+        const liveAfterPacket = getFoxDraft();
+        const wageFollow = (detail.quietLines ?? []).find((line) => isPacketWagesFollowLine(line));
+        if (
+          wageFollow &&
+          !detail.conflict &&
+          !liveAfterPacket.pendingProposal &&
+          !liveAfterPacket.pendingConflict &&
+          !liveAfterPacket.awaitingPayFrequency &&
+          !liveAfterPacket.awaitingBothMonthlyReason &&
+          !liveAfterPacket.awaitingRaiseWhen &&
+          !liveAfterPacket.awaitingRaiseYtdFar
+        ) {
+          const withoutWage = next.filter(
+            (message) =>
+              !isPacketWagesFollowLine(message.text) && message.text.trim() !== PACKET_READING_LINE,
+          );
+          return applyFoxAsk(withoutWage, { text: wageFollow });
+        }
+        if (detail.conflict && !conflictAlreadySpoken(getFoxDraft(), detail.conflict)) {
           next.push(
             foxAskMessage({
               text: conflictAskCopy(detail.conflict),
@@ -724,8 +1603,8 @@ export function AlwaysOnFox({
             }),
           );
         } else if (
-          getFoxDraft().pendingProposal ||
-          getFoxDraft().pendingConflict ||
+          (getFoxDraft().pendingProposal && shouldSpeakPendingConfirm(getFoxDraft())) ||
+          (getFoxDraft().pendingConflict && !conflictAlreadySpoken(getFoxDraft())) ||
           getFoxDraft().awaitingPayFrequency ||
           getFoxDraft().awaitingBothMonthlyReason ||
           getFoxDraft().awaitingRaiseWhen ||
@@ -733,31 +1612,27 @@ export function AlwaysOnFox({
         ) {
           const live = getFoxDraft();
           const reaction = docReactionAsk(live, detail.extractClass);
-          const ask = live.pendingConflict
-            ? {
-                text: conflictAskCopy(live.pendingConflict),
-                actions: conflictActions(live.pendingConflict),
-              }
-            : reaction ?? workspacePromptCopy("confirm-proposal", live);
-          const lastFox = lastFoxTurn(next);
-          if (!lastFox || !sameFoxAsk(lastFox, ask)) {
-            next.push(foxAskMessage(ask));
-          }
+          const ask =
+            live.pendingConflict && !conflictAlreadySpoken(live)
+              ? {
+                  text: conflictAskCopy(live.pendingConflict),
+                  actions: conflictActions(live.pendingConflict),
+                }
+              : reaction ?? nextFoxAsk(live);
+          const painted = applyFoxAsk(next, ask);
           if (
             detail.refreshStillUseful &&
             live.sampleAccepted &&
             !shouldDeferStillUsefulAsk(live)
           ) {
-            return withUpdatedStillUsefulAsk(next, getFoxDraft());
+            return withUpdatedStillUsefulAsk(painted, getFoxDraft());
           }
+          return painted;
         } else if (getFoxDraft().workspaceFlow && !getFoxDraft().sampleAccepted) {
           const live = getFoxDraft();
           const reaction = docReactionAsk(live, detail.extractClass);
           const ask = reaction ?? workspacePromptCopy(workspacePrompt(live), live);
-          const lastFox = lastFoxTurn(next);
-          if (!lastFox || !sameFoxAsk(lastFox, ask)) {
-            next.push(foxAskMessage(ask));
-          }
+          return applyFoxAsk(next, ask);
         } else if (detail.refreshStillUseful) {
           return withUpdatedStillUsefulAsk(next, getFoxDraft());
         } else if (detail.missing?.length) {
@@ -777,7 +1652,9 @@ export function AlwaysOnFox({
           );
         }
         return next;
-      });
+          })(),
+        ),
+      );
     };
     const onThreadLine = (event: Event) => {
       const message = (event as CustomEvent<FoxMessage>).detail;
@@ -787,10 +1664,26 @@ export function AlwaysOnFox({
         prev.some((item) => item.id === message.id) ? prev : [...prev, message],
       );
     };
+    const onSaveFile = () => {
+      if (!isStart) return;
+      setOpen(true);
+      skipPromptSync.current = true;
+      applyCapture({ field: "save-this-file" });
+      appendReply(SAVE_THIS_FILE_LABEL, { text: ACCOUNT_WHY_SENTENCE });
+    };
+    const onHeaderLogin = () => {
+      if (!isStart) return;
+      setOpen(true);
+      skipPromptSync.current = true;
+      applyCapture({ field: "login-account" });
+      appendReply(LOGIN_LABEL, { text: ACCOUNT_LOGIN_ASK });
+    };
     window.addEventListener("onyx:fox-open", onOpen);
     window.addEventListener("onyx:fox-ask", onAsk);
     window.addEventListener("onyx:fox-fix", onFix);
     window.addEventListener("onyx:fox-explain", onExplain);
+    window.addEventListener("onyx:fox-save-file", onSaveFile);
+    window.addEventListener(HEADER_LOGIN_EVENT, onHeaderLogin);
     window.addEventListener(DOC_INTAKE_EVENT, onIntake);
     window.addEventListener(FOX_THREAD_LINE_EVENT, onThreadLine);
     return () => {
@@ -798,6 +1691,8 @@ export function AlwaysOnFox({
       window.removeEventListener("onyx:fox-ask", onAsk);
       window.removeEventListener("onyx:fox-fix", onFix);
       window.removeEventListener("onyx:fox-explain", onExplain);
+      window.removeEventListener("onyx:fox-save-file", onSaveFile);
+      window.removeEventListener(HEADER_LOGIN_EVENT, onHeaderLogin);
       window.removeEventListener(DOC_INTAKE_EVENT, onIntake);
       window.removeEventListener(FOX_THREAD_LINE_EVENT, onThreadLine);
     };
@@ -811,6 +1706,16 @@ export function AlwaysOnFox({
   useLayoutEffect(() => {
     if (!ready || !stage) return;
     if (isHome) {
+      greeted.current = greetKey;
+      skipPromptSync.current = true;
+      return;
+    }
+    if (isStart && accountResumeIsPending()) {
+      greeted.current = greetKey;
+      skipPromptSync.current = true;
+      return;
+    }
+    if (isStart && hasLinkedAccount(getFoxDraft()) && getFoxMessages().length) {
       greeted.current = greetKey;
       skipPromptSync.current = true;
       return;
@@ -856,36 +1761,202 @@ export function AlwaysOnFox({
   useEffect(() => {
     if (!ready || (stage !== "intake" && !isStart)) return;
     const live = getFoxDraft();
+    if (isStart && shouldHoldAskForLiveLine(live)) return;
+    if (isStart && shouldDeferNextAskForLiveCoupon(live)) return;
+    if (isStart && live.documents.some((doc) => doc.status === "reading" && (doc.extractClass === "government_id" || doc.slot === "id"))) {
+      return;
+    }
     const prompt = isStart ? workspacePrompt(live) : currentPrompt(live);
     const ask = isStart
-      ? workspacePromptCopy(prompt, live)
+      ? isBorrowerNameConfirmPending(live)
+        ? docReactionAsk(live, "government_id") ?? nextFoxAsk(live)
+        : workspacePromptCopy(prompt, live)
       : promptCopy(prompt, live);
     const mustShowReview =
       isStart && prompt === "review" && !live.docsHeld && !live.looksRightHold && !nextDocInvite(live);
+    if (holdAskFoxPaint.current) {
+      skipPromptSync.current = true;
+      return;
+    }
     if (skipPromptSync.current) {
       skipPromptSync.current = false;
-      if (!mustShowReview) return;
+      const thread = getFoxMessages();
+      const liveIndex = liveFoxTurnIndex(thread);
+      const usedConfirmHole = liveIndex >= 0 && !isLiveFoxTurn(thread, liveIndex);
+      if (
+        !mustShowReview &&
+        !usedConfirmHole &&
+        !(live.pendingProposal && shouldSpeakPendingConfirm(live))
+      ) {
+        return;
+      }
     }
     commitMessages((prev) => {
-      if (mustShowReview && hasReviewAsk(prev)) return prev;
+      if (isStart) {
+        const spoken = lastFoxTurn(prev);
+        if (spoken && (isUnreadNote(spoken.text) || isUseThisConfirmText(spoken.text))) return prev;
+        const linked = getFoxDraft();
+        if (
+          hasLinkedAccount(linked) &&
+          spoken &&
+          (isAccountMailWaitLine(spoken.text) ||
+            (signedInReviewStripOpen(linked, prev) &&
+              (spoken.text.trim() === ACCOUNT_SKIPPED_LINE ||
+                spoken.text.trim() === ACCOUNT_SAVE_ASK ||
+                isAccountResumeLeftoverLine(spoken.text) ||
+                isSignedInThreadLeftoverLine(spoken.text))))
+        ) {
+          const desk = deskLineAfterAccountConsume(linked, prev);
+          return withoutAccountResumeLeftovers(withDeskLineAfterAccountConsume(prev, desk, linked), linked);
+        }
+        if (spoken && liveDeskLineOwnsPrompt(spoken.text, linked)) {
+          return withoutAccountResumeLeftovers(prev, linked);
+        }
+        if (hasLinkedAccount(linked)) {
+          if (
+            ask.text === PATH_ASK_TEXT ||
+            ask.text === ACCOUNT_WHY_SENTENCE ||
+            ask.text === ACCOUNT_FIRST_WHY ||
+            ask.text === ACCOUNT_FIRST_OFFER ||
+            isSignedInThreadLeftoverLine(ask.text) ||
+            ask.text === ACCOUNT_FILE_YOURS ||
+            ask.text === ACCOUNT_LOGIN_ASK ||
+            ask.text === ACCOUNT_EMAIL_ASK ||
+            intakeAskAlreadyAnswered(ask.text, linked)
+          ) {
+            return withoutAccountResumeLeftovers(prev, linked);
+          }
+        }
+      }
+      if (mustShowReview && hasReviewAsk(prev)) {
+        return prev.map((message) =>
+          message.role === "fox" && isLooksRightAskText(message.text)
+            ? { ...message, actions: undefined }
+            : message,
+        );
+      }
       if (
         isStart &&
         shouldDeferStillUsefulAsk(live) &&
         prompt !== "confirm-proposal" &&
         prompt !== "pay-frequency" &&
+        prompt !== "wage-docs" &&
+        prompt !== "w2-box5" &&
+        prompt !== "w2-pay-frequency" &&
+        prompt !== "paystub-monthly" &&
         prompt !== "both-monthly-reason" &&
         prompt !== "raise-when" &&
         prompt !== "raise-ytd-far"
       ) {
         return prev;
       }
-      if (isStart && prompt === "done") {
-        if (hasPreparedAsk(prev)) return prev;
-        if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
+      if (isStart && shouldHoldAskForLiveLine(live)) {
+        return prev;
       }
-      const lastFox = lastFoxTurn(prev);
+      if (isStart && shouldDeferNextAskForLiveCoupon(live) && prompt !== "confirm-proposal") {
+        return prev;
+      }
+      if (
+        isStart &&
+        californiaZipOnFile(live) &&
+        (prompt === "property-address" || prompt === "property-zip" || prompt === "geo-stop")
+      ) {
+        return prev;
+      }
+      if (
+        isStart &&
+        live.incomeType.value &&
+        !whoOnLoanSettled(live) &&
+        !live.sampleAccepted &&
+        !live.pendingFinish
+      ) {
+        const last = lastFoxTurn(prev);
+        if (!last || isPricingWhenReadySpeech(last) || isLookupWaitLine(last.text)) {
+          const spoken = whoOnLoanAskCopy(live);
+          if (spoken.text.trim()) return applyFoxAsk(withoutWaitLines(prev), spoken);
+        }
+      }
+      if (isStart && live.liveQuoteStatus === "unavailable" && !live.liveCouponSettled && !live.liveQuote) {
+        const last = lastFoxTurn(prev);
+        if (workspacePrompt(live) === "who-on-loan") {
+          const spoken = nextFoxAsk(live);
+          if (spoken.text.trim()) return applyFoxAsk(withoutWaitLines(prev), spoken);
+        }
+        if (
+          last &&
+          (isPricingWhenReadySpeech(last) ||
+            Boolean(live.liveQuoteVendorReason && last.text === live.liveQuoteVendorReason))
+        ) {
+          return prev;
+        }
+        if (!last || isLookupWaitLine(last.text)) {
+          const spoken = nextFoxAsk(live);
+          if (spoken.text.trim()) return applyFoxAsk(withoutWaitLines(prev), spoken);
+        }
+        return prev;
+      }
+      if (isStart && prompt === "done") {
+        const spoken = lastFoxTurn(prev);
+        if (spoken && receivedIdInviteIsStale(spoken.text, live)) {
+          return applyFoxAsk(prev, standingLastLineAfterReceivedId(live, prev));
+        }
+        if (!(spoken && isAccountMailWaitLine(spoken.text) && hasLinkedAccount(getFoxDraft()))) {
+          if (hasPreparedAsk(prev)) return prev;
+          if (fileExists(getFoxDraft()) && prev[prev.length - 1]?.role === "fox") return prev;
+        }
+      }
+      if (
+        isStart &&
+        prompt === "amount" &&
+        lastFoxTurn(prev) &&
+        isOnFileAddressLine(lastFoxTurn(prev)!)
+      ) {
+        const cut = dropFoxActions(withoutTrailingSealedFoxLines(prev));
+        if (cut.some((item) => isContractExtractAskText(item.text))) {
+          return applyFoxAsk(
+            cut.filter((item) => !isOnFileAddressLine(item)),
+            ask,
+          );
+        }
+        return [...cut, foxAskMessage(ask)];
+      }
+      const painted = freezeUsedFoxTurns(prev);
+      const lastFox = lastFoxTurn(painted);
+      if (lastFox && receivedIdInviteIsStale(lastFox.text, live)) {
+        return applyFoxAsk(painted, standingLastLineAfterReceivedId(live, painted));
+      }
+      if (lastFox && lastFox.text.trim() === MOTION_COPY.escalated) {
+        return painted;
+      }
+      if (lastFox && isAskFoxFileSpokenLine(lastFox.text)) {
+        return painted;
+      }
+      if (lastFox && shouldHoldDocInviteForOpenUseThis(lastFox.text, lastFox.actions, ask.text)) {
+        return painted;
+      }
+      if (isPacketWagesFollowLine(lastFox?.text ?? "")) {
+        return painted;
+      }
+      if (isK1NoPersonLine(lastFox?.text ?? "")) {
+        return painted;
+      }
+      if (
+        returnCardLinesOnFile(live).length > 0 &&
+        (taxReturnPacketHoldAsk(live) ||
+          !ask.text.trim() ||
+          ask.text.trim() === ACCOUNT_FIRST_OFFER ||
+          ask.text.trim() === PACKET_READING_LINE)
+      ) {
+        return painted;
+      }
       if (lastFox && sameFoxAsk(lastFox, ask)) return prev;
-      return [...prev, foxAskMessage(ask)];
+      if (isOnFileAddressLine({ id: lastFox?.id ?? "on-file", role: "fox", text: ask.text })) {
+        return isIdExtractPath(live) ? dropOnFileAddressLines(prev) : prev;
+      }
+      const held = addressConfirmPending(live)
+        ? withoutLiveQuoteSpeech(prev)
+        : dropResolvedAddressConfirmChips(prev, live);
+      return applyFoxAsk(held, ask);
     });
   }, [draft.updatedAt, isStart, ready, stage]);
 
@@ -893,8 +1964,14 @@ export function AlwaysOnFox({
     if (!ready || !isStart) return;
     const live = getFoxDraft();
     if (live.docsHeld || workspacePrompt(live) !== "review") return;
+    if (draftHasOpenConfirmCard(live)) return;
     const ask = workspacePromptCopy("review", live);
-    commitMessages((prev) => (hasReviewAsk(prev) ? prev : [...prev, foxAskMessage(ask)]));
+    commitMessages((prev) => {
+      if (hasReviewAsk(prev) || threadHasOpenUseThisConfirm(prev) || draftHasOpenConfirmCard(getFoxDraft())) {
+        return prev;
+      }
+      return freezeUsedFoxTurns([...prev, foxAskMessage(ask)]);
+    });
   }, [
     draft.amountAsked,
     draft.loanAmountValue,
@@ -910,6 +1987,107 @@ export function AlwaysOnFox({
     isStart,
     ready,
   ]);
+
+  useEffect(() => {
+    if (!ready || !isStart || !rateflowKey) return;
+    const already = getFoxDraft();
+    if (already.liveCouponSettled) return;
+    if (already.liveQuote?.key === rateflowKey && already.liveQuoteStatus === "ready") {
+      commitMessages((prev) => {
+        skipPromptSync.current = shouldDeferNextAskForLiveCoupon(already);
+        return messagesWithRateOrReadySpeech(withoutWaitLines(prev), already);
+      });
+      return;
+    }
+    let cancelled = false;
+    skipPromptSync.current = true;
+    setLookupWait("rateflow");
+    commitMessages((prev) => withWaitLine(prev, "rateflow"));
+    const startedAt = Date.now();
+    void (async () => {
+      while (!cancelled) {
+        const result = await requestRateflowIfNeeded(getFoxDraft());
+        if (cancelled) return;
+        const liveNow = getFoxDraft();
+        const key = searchedKeyFor(liveNow) || rateflowKey;
+        if (result && result !== "unavailable") {
+          setLookupWait(null);
+          const { rows, ...quote } = result;
+          setLiveQuoteResult(key, quote, rows);
+          const live = getFoxDraft();
+          skipPromptSync.current = shouldDeferNextAskForLiveCoupon(live);
+          commitMessages((prev) =>
+            messagesWithRateOrReadySpeech(withoutWaitLines(prev), live),
+          );
+          return;
+        }
+        if (result === "unavailable" || Date.now() - startedAt >= RATEFLOW_UI_WAIT_MS) {
+          setLookupWait(null);
+          if (key) setLiveQuoteResult(key, null, undefined, takeRateflowVendorReason());
+          const live = getFoxDraft();
+          skipPromptSync.current = true;
+          commitMessages((prev) =>
+            messagesWithRateOrReadySpeech(withoutWaitLines(prev), live),
+          );
+          return;
+        }
+        commitMessages((prev) => withWaitLine(prev, "rateflow"));
+        await new Promise((resolve) => window.setTimeout(resolve, 400));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isStart, rateflowKey, ready, draft.liveQuoteRetryAt, draft.liveCouponSettled]);
+
+  useEffect(() => {
+    if (!ready || !isStart) {
+      setStreetSuggestions([]);
+      return;
+    }
+    if (placesSuggestFrozen.current) {
+      setStreetSuggestions([]);
+      return;
+    }
+    if (
+      workspacePrompt(draft) !== "property-address" ||
+      workspacePrompt(draft) === "former-history" ||
+      draft.pendingProposal ||
+      draft.pendingAddress
+    ) {
+      setStreetSuggestions([]);
+      return;
+    }
+    const q = input.trim();
+    if (!shouldSuggestStreets(q)) {
+      setStreetSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void requestAddressSuggestions(q).then((rows) => {
+        if (cancelled) return;
+        if (placesSuggestFrozen.current) {
+          setStreetSuggestions([]);
+          return;
+        }
+        const live = getFoxDraft();
+        if (workspacePrompt(live) !== "property-address") {
+          setStreetSuggestions([]);
+          return;
+        }
+        if (live.pendingProposal || live.pendingAddress) {
+          setStreetSuggestions([]);
+          return;
+        }
+        setStreetSuggestions(rows);
+      });
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [draft.pendingAddress, draft.pendingProposal, draft.updatedAt, input, isStart, ready]);
 
   useEffect(() => {
     if (!ready || !isStart) return;
@@ -980,16 +2158,24 @@ export function AlwaysOnFox({
   const moneyAsk =
     (startAsk === "amount" && !askingAmountPurpose) ||
     startAsk === "value" ||
+    startAsk === "first-lien" ||
     startAsk === "debts" ||
     (startAsk === "assets" && (draft.sampleAccepted || draft.correcting === "assets")) ||
     startAsk === "current-housing" ||
-    startAsk === "subject-lease";
+    startAsk === "subject-lease" ||
+    startAsk === "w2-box5" ||
+    startAsk === "paystub-monthly";
   const numberAsk =
     startAsk === "credit" ||
     startAsk === "term" ||
     startAsk === "time-on-job" ||
     startAsk === "years-in-business";
-  const needsTyping = moneyAsk || numberAsk || askingAmountPurpose;
+  const needsTyping =
+    moneyAsk ||
+    numberAsk ||
+    askingAmountPurpose ||
+    startAsk === "property-address" ||
+    Boolean(draft.awaitingUnreadNote);
 
   const focusComposer = (force = false) => {
     const node = inputRef.current;
@@ -1012,6 +2198,7 @@ export function AlwaysOnFox({
 
   useEffect(() => {
     setInput("");
+    setStreetSuggestions([]);
   }, [startAsk]);
 
   if (!stage && !isStart) return null;
@@ -1030,13 +2217,60 @@ export function AlwaysOnFox({
     editLine?: string,
   ) => {
     commitMessagesNow((prev) => {
-      const next: FoxMessage[] = [
-        ...prev,
-        { id: newId(), role: "client", text: clientText, edit, editLine },
-      ];
-      if (!fox.text.trim() && !(fox.followUp ?? "").trim()) return next;
-      return [...next, foxAskMessage(fox)];
+      const live = getFoxDraft();
+      const held = addressConfirmPending(live)
+        ? withoutLiveQuoteSpeech(prev)
+        : dropResolvedAddressConfirmChips(prev, live);
+      const lastClient = [...held].reverse().find((item) => item.role === "client");
+      const zipOnce =
+        isZipOnlyQuery(clientText) &&
+        Boolean(lastClient?.text) &&
+        isZipOnlyFileAddress(String(lastClient?.text ?? "").trim(), clientText);
+      const foxZipEcho =
+        isZipOnlyQuery(clientText) &&
+        isZipOnlyFileAddress(
+          String(fox.text ?? "")
+            .replace(/\s*Use this\?\s*$/i, "")
+            .replace(/[.\s]+$/g, "")
+            .trim(),
+          clientText,
+        );
+      const next: FoxMessage[] = zipOnce
+        ? held
+        : [...held, { id: newId(), role: "client", text: clientText, edit, editLine }];
+      if (foxZipEcho) return sealStoredFoxThread(next);
+      if (!fox.text.trim() && !(fox.followUp ?? "").trim()) {
+        if (fox.actions?.length) {
+          return withNextAskIfUsedConfirm(
+            sealStoredFoxThread([
+              ...next,
+              foxAskMessage({ ...fox, text: fox.text || "I’m here. Type below, or tap a reply." }),
+            ]),
+            live,
+          );
+        }
+        return withNextAskIfUsedConfirm(sealStoredFoxThread(next), live);
+      }
+      if (isYearsInBusinessAskText(fox.text)) {
+        const withoutYears = next.filter(
+          (item) => !(item.role === "fox" && isYearsInBusinessAskText(item.text)),
+        );
+        return withNextAskIfUsedConfirm(sealStoredFoxThread([...withoutYears, foxAskMessage(fox)]), live);
+      }
+      const spoken = sealStoredFoxThread([...next, foxAskMessage(fox)]);
+      if (fox.text.trim() === MOTION_COPY.escalated) return spoken;
+      return withNextAskIfUsedConfirm(spoken, live);
     });
+  };
+
+  const skipPropertyAddressFromComposer = (spoken: string) => {
+    placesWaitGen.current += 1;
+    placesSuggestFrozen.current = false;
+    setLookupWait(null);
+    setStreetSuggestions([]);
+    applyCapture({ field: "skip-property-address" });
+    skipPromptSync.current = true;
+    appendReply(spoken, nextFoxAsk(getFoxDraft()));
   };
 
   const appendStructureFix = (clientText: string, capture: Capture) => {
@@ -1062,19 +2296,97 @@ export function AlwaysOnFox({
     router.push(deskHrefFromSession(live.path ?? null, live.productIntent ?? null));
   };
 
-  const editClientLine = (message: FoxMessage) => {
-    if (!isStart || !message.edit) return;
+  const editThreadTurn = (prompt: FoxPrompt, line?: string, messageId?: string) => {
+    if (!isStart) return;
     skipPromptSync.current = true;
-    applyCapture({
-      field: "correct",
-      value: message.edit,
-      line: message.editLine ?? message.edit,
+    applyCapture({ field: "correct", value: prompt, line });
+    const live = getFoxDraft();
+    commitMessages((prev) => {
+      const priceEdit = prompt === "value" || line === "price";
+      const editedId = messageId ?? findClientEditMessageId(prev, prompt, line);
+      const kept = editedId ? threadThroughEditedTurn(prev, editedId) : prev;
+      const stripped = dropFoxActions(kept);
+      if (priceEdit) return stripped;
+      return [...stripped, foxAskMessage(workspacePromptCopy(prompt, live))];
     });
-    const ask = workspacePromptCopy(message.edit, getFoxDraft());
-    commitMessages((prev) => [...dropFoxActions(prev), foxAskMessage(ask)]);
   };
 
   const runAction = (action: FoxAction) => {
+    const liveDraft = getFoxDraft();
+    if (
+      hasLinkedAccount(liveDraft) &&
+      (action.capture?.field === "create-account" || action.capture?.field === "save-this-file")
+    ) {
+      return;
+    }
+    if (
+      action.capture?.field === "create-account" ||
+      action.capture?.field === "login-account" ||
+      action.capture?.field === "skip-account" ||
+      action.capture?.field === "save-this-file" ||
+      action.capture?.field === "account-channel"
+    ) {
+      const firstOfferSkip =
+        action.capture.field === "skip-account" && firstAccountOfferOpen(liveDraft);
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      if (firstOfferSkip) {
+        appendReply(action.label, nextFoxAsk(getFoxDraft()));
+        return;
+      }
+      const spoken =
+        action.capture.field === "create-account" || action.capture.field === "save-this-file"
+          ? accountCreateWhy(liveDraft)
+          : action.capture.field === "login-account"
+            ? ACCOUNT_LOGIN_ASK
+            : action.capture.field === "skip-account"
+              ? ACCOUNT_SKIPPED_LINE
+              : action.capture.value === "phone"
+                ? ACCOUNT_PHONE_ASK
+                : ACCOUNT_EMAIL_ASK;
+      appendReply(action.label, { text: spoken });
+      return;
+    }
+    if (action.capture?.field === "not-yet" && signedInReviewStripOpen(liveDraft, getFoxMessages())) {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      const last = lastFoxTurn(getFoxMessages())?.text?.trim() || "";
+      if (last === MOTION_COPY.ready || /i can send this to review/i.test(last)) {
+        commitMessagesNow((prev) => [...prev, { id: newId(), role: "client", text: action.label }]);
+        return;
+      }
+      appendReply(action.label, {
+        text: MOTION_COPY.ready,
+        actions: signedInReviewStripActions(getFoxDraft()),
+      });
+      return;
+    }
+    const stripIds = new Set(deskStripActions(getFoxMessages(), liveDraft).map((item) => item.id));
+    if (
+      (action.id === "accept-proposal" || action.id === "change-proposal") &&
+      !stripIds.has(action.id) &&
+      !liveDraft.pendingProposal &&
+      !liveDraft.pendingConflict &&
+      !liveDraft.pendingAddress
+    ) {
+      return;
+    }
+    if (action.capture?.field === "skip-property-address") {
+      skipPropertyAddressFromComposer(action.label);
+      return;
+    }
+    if (action.capture?.field === "change-proposal") {
+      placesSuggestFrozen.current = false;
+      setStreetSuggestions([]);
+      setInput("");
+    }
+    if (action.capture?.field === "couponChoice" && action.capture.value === "skip") {
+      setLookupWait((current) => (current === "rateflow" ? null : current));
+      commitMessages((prev) => withoutWaitLines(prev));
+    }
+    if (action.capture?.field === "retry-rateflow") {
+      resetRateflowSearch(searchedKeyFor(getFoxDraft()) || rateflowKey);
+    }
     const productIntent = productIntentFromAction(action);
     const productCapture = productIntent
       ? ({ field: "productIntent" as const, value: productIntent } satisfies Capture)
@@ -1105,9 +2417,21 @@ export function AlwaysOnFox({
       router.push(DESK_START_HREF);
       return;
     }
+    if (action.capture?.field === "talk-originator") {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      paintedAskFoxText.current = "";
+      const live = getFoxDraft();
+      appendReply(action.label, {
+        text: MOTION_COPY.escalated,
+        actions: finishLineActions(live),
+      });
+      return;
+    }
     if (action.capture?.field === "what-happens-next" || action.capture?.field === "ask-fox") {
       applyCapture(action.capture);
       skipPromptSync.current = true;
+      if (action.capture.field === "ask-fox") holdAskFoxLocalPersist();
       const live = getFoxDraft();
       if (action.capture.field === "ask-fox" && live.docsHeld && !live.sampleAccepted) {
         appendReply(action.label, holdDocsAskFox());
@@ -1125,20 +2449,32 @@ export function AlwaysOnFox({
       }
       return;
     }
-    if (
-      action.capture?.field === "open-docs" ||
-      action.capture?.field === "upload-more" ||
-      action.event === "open-docs"
-    ) {
-      const invitePick =
-        action.capture?.field === "open-docs" && !getFoxDraft().sampleAccepted;
-      if (invitePick) {
+    if (action.capture?.field === "retry-unread-doc") {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      requestFoxPickFile();
+      const live = getFoxDraft();
+      appendReply(action.label, workspacePromptCopy(workspacePrompt(live), live));
+      return;
+    }
+    if (action.capture?.field === "note-unread-doc") {
+      applyCapture(action.capture);
+      skipPromptSync.current = true;
+      const live = getFoxDraft();
+      appendReply(action.label, workspacePromptCopy(workspacePrompt(live), live));
+      window.requestAnimationFrame(() => focusComposer(true));
+      return;
+    }
+    if (action.capture?.field === "open-docs" || action.event === "open-docs") {
+      if (!getFoxDraft().sampleAccepted) {
         applyCapture({ field: "start-docs" });
-        skipPromptSync.current = true;
-        requestFoxPickFile();
-        return;
       }
-      applyCapture(action.capture ?? { field: "open-docs" });
+      skipPromptSync.current = true;
+      requestFoxPickFile();
+      return;
+    }
+    if (action.capture?.field === "upload-more") {
+      applyCapture(action.capture);
       skipPromptSync.current = true;
       appendReply(action.label, { text: "" });
       window.requestAnimationFrame(() => {
@@ -1157,6 +2493,14 @@ export function AlwaysOnFox({
       applyCapture(action.capture);
       skipPromptSync.current = true;
       const live = getFoxDraft();
+      if (hasPurchaseContractDoc(live)) {
+        const ask =
+          live.pendingConflict || live.pendingProposal
+            ? (docReactionAsk(live) ?? nextFoxAsk(live))
+            : nextFoxAsk(live);
+        appendReply(action.label, ask);
+        return;
+      }
       const key = stillUsefulRefreshKey(live);
       const lines: FoxMessage[] = [
         {
@@ -1180,25 +2524,150 @@ export function AlwaysOnFox({
       commitMessagesNow((prev) => [...prev, ...lines]);
       return;
     }
+    const placeCapture = action.capture;
+    if (placeCapture?.field === "propose-place-address") {
+      const gen = ++placesWaitGen.current;
+      placesSuggestFrozen.current = true;
+      skipPromptSync.current = true;
+      setStreetSuggestions([]);
+      setInput("");
+      if (lookupWait === "places") {
+        setLookupWait(null);
+        commitMessages((prev) => withoutWaitLines(dropStreetSuggestChips(prev)));
+      } else {
+        commitMessages((prev) => dropStreetSuggestChips(prev));
+      }
+      void (async () => {
+        const place = looksLikePlaceId(placeCapture.value)
+          ? await requestPlaceAddress(placeCapture.value)
+          : parseSafePlaceAddress(placeCapture.value);
+        if (gen !== placesWaitGen.current) return;
+        const capture = place
+          ? {
+              field: "propose-place-address" as const,
+              value: encodePlaceAddress(place),
+            }
+          : {
+              field: "propose-subject-address" as const,
+              value: action.label,
+            };
+        applyCapture(capture);
+        skipPromptSync.current = true;
+        const live = getFoxDraft();
+        const next = workspacePromptCopy("confirm-proposal", live);
+        appendReply(action.label, next, editPromptFromCapture(capture), editLineFromCapture(capture));
+      })();
+      return;
+    }
     if (action.capture || productCapture) {
       const capture = productCapture ?? action.capture;
       if (!capture) return;
+      if (capture.field === "confirm-draft") {
+        const liveBefore = getFoxDraft();
+        const looksRightWouldTake = applyLooksRightMotion(liveBefore).sampleAccepted;
+        if (
+          !liveBefore.sampleAccepted &&
+          !looksRightWouldTake &&
+          (liveBefore.pendingProposal ||
+            liveBefore.pendingConflict ||
+            liveBefore.pendingAddress ||
+            !canLooksRight(liveBefore))
+        ) {
+          skipPromptSync.current = true;
+          return;
+        }
+      }
       if (capture.field === "path") {
         writeStartPath(capture.value);
       }
       const editing = Boolean(isStart && draft.correcting && structureWriteCapture(capture.field));
       const pendingEdit = editPromptFromPendingField(draft.pendingProposal?.field);
+      const addressPending =
+        isSubjectAddressConfirmPending(draft) || Boolean(draft.pendingAddress?.line);
+      const acceptingAddress =
+        draft.pendingProposal?.field === "property_address" ||
+        draft.pendingProposal?.field === "subjectAddress" ||
+        draft.pendingProposal?.field === "present_address" ||
+        (Boolean(draft.pendingAddress?.line) && !draft.pendingProposal);
+      const contractConfirm =
+        capture.field === "accept-proposal" &&
+        (isPurchaseContractConfirmPending(draft) ||
+          isContractExtractAskText(lastFoxTurn(getFoxMessages())?.text));
+      const lastSpoken = lastFoxTurn(getFoxMessages());
+      const livePaperSkip =
+        isPurchaseContractInviteLine(lastSpoken?.text) ||
+        isHistoryDocInviteText(lastSpoken?.text) ||
+        isGovernmentIdInviteLine(lastSpoken?.text);
+      const followWasOpen = Boolean(transcriptFollowUpAsk(getFoxDraft()));
+      const offerAlreadyDone = transcriptOfferDone(getFoxDraft());
       applyCapture(capture);
+      if (capture.field === "accept-proposal") {
+        void continueTaxReturnPacketRead();
+      }
       skipPromptSync.current = true;
       const live = getFoxDraft();
+      if (
+        capture.field === "incomeType" &&
+        !whoOnLoanSettled(live) &&
+        !live.sampleAccepted &&
+        !live.pendingFinish
+      ) {
+        appendReply(action.label, whoOnLoanAskCopy(live), editPromptFromCapture(capture));
+        continueHomeToDesk();
+        return;
+      }
+      if (capture.field === "skip-docs" && offerAlreadyDone && !followWasOpen && !livePaperSkip) {
+        const leftoverNext = nextFoxAsk(live);
+        if (leftoverNext.text.trim()) appendReply(action.label, leftoverNext);
+        return;
+      }
+      if (capture.field === "skip-docs" && followWasOpen && transcriptOfferDone(live) && !livePaperSkip) {
+        const afterTranscript = nextFoxAsk(live);
+        appendReply(action.label, afterTranscript.text.trim() ? afterTranscript : nextFoxAsk(live));
+        return;
+      }
       if (editing) {
         appendStructureFix(action.label, capture);
         return;
       }
+      if (capture.field === "accept-proposal" && acceptingAddress && fileAddressLine(live)) {
+        if (needsPurchaseSplitAsk(live) || contractConfirm) {
+          appendReply(action.label, nextFoxAsk(live));
+          return;
+        }
+        const waitingForLive =
+          Boolean(searchedKeyFor(live)) &&
+          live.liveQuoteStatus !== "unavailable" &&
+          !(live.liveQuoteStatus === "ready" && live.liveQuote);
+        if (!waitingForLive) {
+          commitMessagesNow((prev) => {
+            const held = dropResolvedAddressConfirmChips(prev, live);
+            const spoken = nextFoxAsk(live);
+            const next: FoxMessage[] = [
+              ...held,
+              { id: newId(), role: "client", text: action.label },
+            ];
+            if (spoken.text.trim()) next.push(foxAskMessage(spoken));
+            return messagesWithRateOrReadySpeech(next, live);
+          });
+          return;
+        }
+        appendReply(action.label, nextFoxAsk(live));
+        return;
+      }
+      const couponResolved =
+        (capture.field === "couponChoice" &&
+          (capture.value === "this" || capture.value === "skip")) ||
+        capture.field === "accept-live-coupon" ||
+        capture.field === "keep-live-coupon";
+      const afterCoupon =
+        couponResolved && incomeAskOpen(live)
+          ? workspacePromptCopy("income", live)
+          : nextFoxAsk(live);
       const next =
         workspaceSurface
           ? withWorkspaceGuide(
-              { ...nextFoxAsk(live), capture },
+              { ...afterCoupon, capture },
               live,
             )
           : promptCopy(currentPrompt(live), live);
@@ -1216,8 +2685,20 @@ export function AlwaysOnFox({
         edit,
         capture.field === "correct" ? undefined : editLineFromCapture(capture),
       );
+      if (capture.field === "change-proposal" && addressPending) {
+        window.requestAnimationFrame(() => focusComposer(true));
+      }
       continueHomeToDesk();
     }
+  };
+
+  const pickStreetSuggestion = (place: PlaceSuggestion) => {
+    runAction({
+      id: `place-${place.id}`,
+      label: place.line,
+      event: "bubble",
+      capture: { field: "propose-place-address", value: place.id },
+    });
   };
 
   const onSubmit = (event: FormEvent) => {
@@ -1231,22 +2712,193 @@ export function AlwaysOnFox({
     }
     const replyStage = stage ?? (isStart ? "start" : null);
     if (!text || !replyStage) return;
-    const moneyDigits = text.replace(/[$,\s]/g, "").replace(/%$/, "");
-    if (
-      isStart &&
-      startAsk === "amount" &&
-      draft.propertyValueAmount != null &&
-      Number(moneyDigits) === draft.propertyValueAmount
-    ) {
+    const repeatedPurchasePrice =
+      isStart && startAsk === "amount" ? purchasePriceRepeatReply(draft, text) : null;
+    if (repeatedPurchasePrice) {
       setOpen(true);
       setInput("");
-      appendReply(text, {
-        text: "Purchase price is in the file. What’s the down payment or loan amount?",
-      }, "amount");
+      appendReply(text, { text: repeatedPurchasePrice }, "amount");
       return;
     }
     setOpen(true);
     setInput("");
+    const beforeAccount = getFoxDraft();
+    const accountReply = accountWorkspaceReply(text, beforeAccount);
+    if (
+      accountReply?.capture?.field === "create-account" ||
+      accountReply?.capture?.field === "login-account" ||
+      accountReply?.capture?.field === "skip-account" ||
+      accountReply?.capture?.field === "save-this-file" ||
+      accountReply?.capture?.field === "account-channel"
+    ) {
+      const firstOfferSkip =
+        accountReply.capture.field === "skip-account" && firstAccountOfferOpen(beforeAccount);
+      applyCapture(accountReply.capture);
+      skipPromptSync.current = true;
+      appendReply(text, firstOfferSkip ? nextFoxAsk(getFoxDraft()) : { text: accountReply.text });
+      return;
+    }
+    if (accountReply?.capture?.field === "account-email" || accountReply?.capture?.field === "account-phone") {
+      skipPromptSync.current = true;
+      applyCapture(accountReply.capture);
+      void createLinkedAccount({
+        email: accountReply.capture.field === "account-email" ? accountReply.capture.value : undefined,
+        phone: accountReply.capture.field === "account-phone" ? accountReply.capture.value : undefined,
+      }).then((snapshot) => {
+        if (
+          snapshot &&
+          snapshot.sameFile &&
+          snapshot.fileId &&
+          snapshot.fileId !== beforeAccount.fileId?.trim() &&
+          accountFileHasStoredContent(snapshot.draft)
+        ) {
+          skipPromptSync.current = true;
+          setMessages(getFoxMessages());
+          return;
+        }
+        const live = getFoxDraft();
+        if (hasLinkedAccount(live) && signedInReviewStripOpen(live, getFoxMessages())) {
+          skipPromptSync.current = true;
+          setMessages(getFoxMessages());
+          return;
+        }
+        const channel = accountReply.capture?.field === "account-phone" ? "phone" : "email";
+        const spoken = snapshot?.sent
+          ? accountSentCopy({ channel })
+          : ACCOUNT_SEND_FAILED;
+        appendReply(text, { text: foxLineLeaksAccountSecret(spoken) ? ACCOUNT_SEND_FAILED : spoken });
+      });
+      return;
+    }
+    if (accountReply?.capture?.field === "account-code") {
+      skipPromptSync.current = true;
+      void resumeAccountFromQuery({ code: accountReply.capture.value }).then((snapshot) => {
+        if (!snapshot) {
+          appendReply(text, { text: ACCOUNT_CODE_ASK });
+          return;
+        }
+        setMessages(getFoxMessages());
+      });
+      return;
+    }
+    if (
+      isStart &&
+      (lookupWait === "places" ||
+        startAsk === "property-address" ||
+        isSubjectAddressConfirmPending(draft)) &&
+      isSkipPropertyAddressText(text)
+    ) {
+      skipPropertyAddressFromComposer(text);
+      return;
+    }
+    if (
+      isStart &&
+      startAsk !== "former-history" &&
+      workspacePrompt(draft) !== "former-history" &&
+      (startAsk === "property-address" || lookupWait === "places") &&
+      !isZipOnlyQuery(text) &&
+      parseVolunteeredAddress(text) &&
+      !isSkipPropertyAddressText(text)
+    ) {
+      const spoken = text;
+      const gen = ++placesWaitGen.current;
+      skipPromptSync.current = true;
+      setLookupWait("places");
+      commitMessages((prev) => withWaitLine(prev, "places"));
+      void (async () => {
+        const rows = await requestAddressSuggestions(spoken);
+        const needle = spoken.replace(/\s+/g, " ").trim().toLowerCase();
+        const match =
+          rows.find((item) => item.line.replace(/\s+/g, " ").trim().toLowerCase() === needle) ??
+          rows.find((item) => item.line.replace(/\s+/g, " ").toLowerCase().startsWith(needle)) ??
+          (rows.length === 1 ? rows[0] : undefined);
+        const place = match ? await requestPlaceAddress(match.id) : null;
+        if (gen !== placesWaitGen.current) return;
+        setLookupWait(null);
+        commitMessages((prev) => withoutWaitLines(prev));
+        const capture = place
+          ? {
+              field: "propose-place-address" as const,
+              value: encodePlaceAddress(place),
+            }
+          : {
+              field: "propose-subject-address" as const,
+              value: spoken,
+            };
+        applyCapture(capture);
+        skipPromptSync.current = true;
+        const live = getFoxDraft();
+        const next = workspacePromptCopy("confirm-proposal", live);
+        appendReply(spoken, next, editPromptFromCapture(capture), editLineFromCapture(capture));
+      })();
+      return;
+    }
+    if (isAskFoxFreeQuestion(text, draft)) {
+      skipPromptSync.current = true;
+      holdAskFoxPaint.current = true;
+      holdAskFoxLocalPersist();
+      const session = getAccountSession();
+      const ownedId = draft.fileId?.trim();
+      const paintAskFox = (fox: { text: string; actions?: ReturnType<typeof finishLineActions> }) => {
+        skipPromptSync.current = true;
+        holdAskFoxPaint.current = true;
+        paintedAskFoxText.current = fox.text.trim();
+        const live = getFoxDraft();
+        const stored = getFoxMessages();
+        const base = stored.length >= messages.length ? stored : messages;
+        const held = addressConfirmPending(live)
+          ? withoutLiveQuoteSpeech(base)
+          : dropResolvedAddressConfirmChips(base, live);
+        const withClient: FoxMessage[] = [...held, { id: newId(), role: "client" as const, text }];
+        const painted = sealStoredFoxThread([...withClient, foxAskMessage(fox)]);
+        setFoxMessages(painted);
+        setMessages(painted);
+        skipPromptSync.current = true;
+      };
+      void (async () => {
+        if (session?.token && ownedId && session.fileId === ownedId) {
+          try {
+            const res = await fetch("/api/ask-fox", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                question: text,
+                fileId: ownedId,
+                token: session.token,
+              }),
+            });
+            if (res.ok) {
+              const body = (await res.json()) as {
+                text?: string;
+                log?: { fileId?: string; factsUsed?: string[]; wroteFile?: boolean };
+              };
+              const spoken = String(body.text ?? "").trim();
+              const log = body.log;
+              if (
+                spoken &&
+                log?.wroteFile === false &&
+                (!log.fileId || log.fileId === ownedId) &&
+                askFoxAnswerFromFileRows(log)
+              ) {
+                paintAskFox({ text: spoken, actions: finishLineActions(getFoxDraft()) });
+                return;
+              }
+            }
+          } catch {
+            // Fall through to the owned in-memory File. Never another File.
+          }
+        }
+        if (session?.fileId && ownedId && session.fileId !== ownedId) {
+          paintAskFox({
+            text: "I can only answer from this File.",
+            actions: finishLineActions(getFoxDraft()),
+          });
+          return;
+        }
+        paintAskFox(workspaceAskFoxFileReply(text, getFoxDraft()));
+      })();
+      return;
+    }
     const reply = replyToMessage(text, replyStage, draft, scenario);
     if (reply.capture?.field === "path") {
       writeStartPath(reply.capture.value);
@@ -1258,10 +2910,17 @@ export function AlwaysOnFox({
       const invitePick = reply.capture.field === "open-docs" && !draft.sampleAccepted;
       if (!invitePick) applyCapture(reply.capture);
       skipPromptSync.current = true;
+      if (
+        reply.capture.field === "change-proposal" ||
+        reply.capture.field === "skip-property-address"
+      ) {
+        placesSuggestFrozen.current = false;
+        setStreetSuggestions([]);
+      }
     }
-    if (reply.capture?.field === "open-docs" && !draft.sampleAccepted) {
+    if (reply.capture?.field === "open-docs") {
       requestFoxPickFile();
-    } else if (reply.capture?.field === "open-docs" || reply.capture?.field === "upload-more") {
+    } else if (reply.capture?.field === "upload-more") {
       window.requestAnimationFrame(() => {
         document.getElementById("fox-documents")?.scrollIntoView({
           block: "nearest",
@@ -1276,6 +2935,39 @@ export function AlwaysOnFox({
       appendStructureFix(clientMoneyText(text, reply.capture), reply.capture);
       return;
     }
+    const rewritePrice = Boolean(
+      isStart &&
+        (draft.correcting === "value" || draft.correctingLine === "price") &&
+        draft.correctingLine !== "home" &&
+        reply.capture?.field === "propertyValue",
+    );
+    if (rewritePrice) {
+      const spoken = clientMoneyText(text, reply.capture);
+      const liveAfterPrice = getFoxDraft();
+      const fundsAsk = workspacePromptCopy("amount", liveAfterPrice);
+      commitMessagesNow((prev) => {
+        const editedId = findClientEditMessageId(prev, "value", "price");
+        const cut = editedId ? threadThroughEditedTurn(prev, editedId) : prev;
+        const next = editedId
+          ? replaceClientTurn(cut, editedId, spoken)
+          : [
+              ...cut,
+              {
+                id: newId(),
+                role: "client" as const,
+                text: spoken,
+                edit: "value" as const,
+                editLine: "price",
+              },
+            ];
+        return [
+          ...dropFoxActions(withoutTrailingSealedFoxLines(next)),
+          foxAskMessage(fundsAsk),
+        ];
+      });
+      continueHomeToDesk();
+      return;
+    }
     appendReply(
       clientMoneyText(text, reply.capture),
       reply,
@@ -1285,6 +2977,9 @@ export function AlwaysOnFox({
         : undefined,
       workspaceSurface ? editLineFromCapture(reply.capture) : undefined,
     );
+    if (reply.capture?.field === "change-proposal") {
+      window.requestAnimationFrame(() => focusComposer(true));
+    }
     continueHomeToDesk();
   };
 
@@ -1314,7 +3009,10 @@ export function AlwaysOnFox({
   const onComposerBlur = (event: FocusEvent<HTMLInputElement>) => {
     if (!needsTyping) return;
     const next = event.relatedTarget;
-    if (next instanceof HTMLElement && next.closest("button, a, .fox-chip, .fox-bar__send")) {
+    if (
+      next instanceof HTMLElement &&
+      next.closest("button, a, .fox-chip, .fox-bar__send, .fox-bar__suggest")
+    ) {
       return;
     }
     window.setTimeout(() => {
@@ -1327,51 +3025,82 @@ export function AlwaysOnFox({
   };
 
   const desk = (
-    <form
-      className={isStart ? "fox-bar__desk fox-bar__desk--plain" : "fox-bar__desk"}
-      onSubmit={onSubmit}
-    >
-      <span className="fox-bar__mark">
-        <AdvisorMark size={20} />
-      </span>
-      <label className="visually-hidden" htmlFor={fieldId}>
-        Message Fox
-      </label>
-      <input
-        key={composerMode}
-        ref={inputRef}
-        id={fieldId}
-        className="fox-bar__input"
-        type="text"
-        value={input}
-        onChange={onComposerChange}
-        onFocus={() => {
-          setOpen(true);
-          window.dispatchEvent(new Event(FOX_KEYBOARD_EVENT));
-        }}
-        onBlur={onComposerBlur}
-        placeholder=""
-        inputMode={composerMode}
-        autoFocus={needsTyping}
-        autoComplete="off"
-      />
-      <button
-        type="submit"
-        className="fox-bar__send"
-        disabled={!input.trim()}
-        aria-label="Send"
+    <div className={streetSuggestions.length ? "fox-bar__compose is-suggesting" : "fox-bar__compose"}>
+      {streetSuggestions.length > 0 ? (
+        <ul id={suggestId} className="fox-bar__suggest" role="listbox">
+          {streetSuggestions.map((item) => (
+            <li key={item.id} role="presentation">
+              <button
+                type="button"
+                role="option"
+                className="fox-bar__suggest-row"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pickStreetSuggestion(item)}
+              >
+                {item.line}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <form
+        className={isStart ? "fox-bar__desk fox-bar__desk--plain" : "fox-bar__desk"}
+        onSubmit={onSubmit}
+        onDragEnter={onComposerFileDrag}
+        onDragOver={onComposerFileDrag}
+        onDrop={onComposerFileDrop}
+        onPaste={onComposerFilePaste}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+        <FoxLiveStrip messages={messages} draft={draft} onAction={runAction} />
+        <FoxAccountStrip draft={draft} onAction={runAction} />
+        <div className="fox-bar__desk-row">
+          <span className={lookupWait ? "fox-bar__mark is-waiting" : "fox-bar__mark"}>
+            <AdvisorMark size={20} />
+          </span>
+          <label className="visually-hidden" htmlFor={fieldId}>
+            Message Fox
+          </label>
+          <input
+            key={composerMode}
+            ref={inputRef}
+            id={fieldId}
+            className="fox-bar__input"
+            type="text"
+            value={input}
+            onChange={onComposerChange}
+            onFocus={() => {
+              setOpen(true);
+              window.dispatchEvent(new Event(FOX_KEYBOARD_EVENT));
+            }}
+            onBlur={onComposerBlur}
+            placeholder={composerPlaceholderForAccount(draft)}
+            inputMode={composerMode}
+            autoFocus={needsTyping}
+            autoComplete="off"
+            aria-autocomplete="list"
+            aria-expanded={streetSuggestions.length > 0}
+            aria-controls={streetSuggestions.length > 0 ? suggestId : undefined}
           />
-        </svg>
-      </button>
-    </form>
+          {workspaceSurface ? <ComposerAttach /> : null}
+          <button
+            type="submit"
+            className="fox-bar__send"
+            disabled={!input.trim()}
+            aria-label="Send"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M3 8h9M8.5 3.5 13 8l-4.5 4.5"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </form>
+    </div>
   );
 
   const workspace = isHome || !(open || isStart) ? null : (
@@ -1384,10 +3113,10 @@ export function AlwaysOnFox({
             : "fox-bar__workspace"
       }
       messages={messages}
+      draft={draft}
       listRef={listRef}
       onClose={() => setOpen(false)}
-      onAction={runAction}
-      onEdit={editClientLine}
+      onEdit={isStart ? editThreadTurn : undefined}
       composer={
         isStart ? (
           <WorkspaceFileDock>{desk}</WorkspaceFileDock>
@@ -1397,12 +3126,22 @@ export function AlwaysOnFox({
       }
       hideClose={isStart || isHome}
       stickyDisclosure={isStart}
+      onAction={isStart ? runAction : undefined}
       onStartOver={
         isStart
           ? () => {
+              if (startOverNeedsConfirm(draft) || getAccountSession()) {
+                if (!window.confirm(START_OVER_CONFIRM)) return;
+              }
               const path = startPath ?? getFoxDraft().path ?? "acr";
               const fresh = startOverWorkspace(path);
+              resetRateflowSearch();
+              setLookupWait(null);
+              holdAskFoxPaint.current = false;
+              paintedAskFoxText.current = "";
               skipPromptSync.current = true;
+              placesSuggestFrozen.current = false;
+              setStreetSuggestions([]);
               setInput("");
               const greet = [foxAskMessage(workspaceGreeting(fresh))];
               setFoxMessages(greet);

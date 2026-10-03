@@ -46,7 +46,6 @@ export function SiteFooter() {
               goal, not a credit decision.
             </p>
             <p className="type-legal">
-              NMLS [OPEN] · CA DRE [OPEN] · We are a mortgage broker.{" "}
               <Link href="/how-we-get-paid">Here’s how we get paid.</Link>
             </p>
             <p className="type-legal">
