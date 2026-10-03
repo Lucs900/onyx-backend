@@ -183,6 +183,8 @@ import {
   k1Box1PersonCopy,
   k1NoPersonLine,
   isK1NoPersonLine,
+  openPapersFollowLine,
+  isOpenPapersFollowLine,
   taxReturnStructureValue,
   canSpeakDocStamp,
   transcriptSpeakKey,
@@ -3025,6 +3027,10 @@ export function docReactionAsk(
   if (draft.returnPaperOtherK1 && !draft.otherK1LoanAsked && !draft.pendingProposal) {
     return otherK1LoanAskCopy(draft);
   }
+  const papersLeft = openPapersFollowLine(draft);
+  if (papersLeft) {
+    return { text: papersLeft, actions: packetWagesUnreadActions() };
+  }
   if (taxReturnPacketHoldAsk(draft)) return packetReadingAsk(draft);
   if (taxReturnPacketCloseAskOpen(draft)) {
     return { text: PACKET_NO_K1_C_LINE, actions: finishLineActions(draft) };
@@ -4241,6 +4247,10 @@ export function nextFoxAsk(draft: FoxIntakeDraft): {
   if (draft.returnPaperOtherK1 && !draft.otherK1LoanAsked && !draft.pendingProposal) {
     return otherK1LoanAskCopy(draft);
   }
+  const papersLeft = openPapersFollowLine(draft);
+  if (papersLeft) {
+    return { text: papersLeft, actions: packetWagesUnreadActions() };
+  }
   if (taxReturnPacketHoldAsk(draft)) return packetReadingAsk(draft);
   if (
     firstAccountOfferOpen(draft) &&
@@ -4486,6 +4496,9 @@ export function deskStripActions(
     return packetWagesUnreadActions();
   }
   if (isK1NoPersonLine(lastFoxTurn(messages)?.text ?? "")) {
+    return packetWagesUnreadActions();
+  }
+  if (isOpenPapersFollowLine(lastFoxTurn(messages)?.text ?? "")) {
     return packetWagesUnreadActions();
   }
   const computed = deskStripActionsComputed(messages, draft).filter((action) => {

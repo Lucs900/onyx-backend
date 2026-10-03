@@ -1409,6 +1409,41 @@ export function isK1NoPersonLine(text: string): boolean {
   return /1120-S is still needed\. No person was on the K-1\.$/.test(String(text ?? "").trim());
 }
 
+function namedK1Written(draft: FoxIntakeDraft): boolean {
+  for (const field of ["k1_partner_name", "other_k1_partner_name"] as const) {
+    const fact = draft.facts?.[field];
+    if (fact?.confirmed && String(fact.value ?? "").trim()) return true;
+  }
+  return false;
+}
+
+function paperStillNeededSentence(paper: string): string {
+  const body = paper.replace(/\s+/g, " ").trim().replace(/\.+$/, "");
+  if (!body) return "";
+  if (/^w-2s\b/i.test(body)) return `${body} are still needed.`;
+  return `${body} is still needed.`;
+}
+
+/**
+ * After a named K-1 Use this, name the papers still on the pad.
+ * The used card stays the previous line. An 1120-S paper is not this line.
+ */
+export function openPapersFollowLine(draft: FoxIntakeDraft): string {
+  if (draft.pendingProposal || draft.pendingConflict || draft.k1PaperNoPerson) return "";
+  if (!namedK1Written(draft)) return "";
+  return returnPapersOnFile(draft)
+    .filter((paper) => !/\b1120-S\b/i.test(paper))
+    .map(paperStillNeededSentence)
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function isOpenPapersFollowLine(text: string): boolean {
+  const line = String(text ?? "").trim();
+  if (!line || isK1NoPersonLine(line) || /\b1120-S\b/i.test(line) || /Use this\?/i.test(line)) return false;
+  return /(?:are|is) still needed\.$/.test(line);
+}
+
 export function drop1120sReturnPaper(draft: FoxIntakeDraft, entity: string): FoxIntakeDraft {
   const papers = returnPapersOnFile(draft);
   const kept = papers.filter((paper) => !paperIs1120sFor(paper, entity));

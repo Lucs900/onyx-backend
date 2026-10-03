@@ -28,6 +28,7 @@ import {
   PACKET_WAGES_UNREAD_LINE,
   k1PersonName,
   isK1NoPersonLine,
+  isOpenPapersFollowLine,
   returnCardLinesOnFile,
   taxReturnPacketDoc,
   hasLockedSuggestion,
@@ -1419,6 +1420,7 @@ async function main() {
   assert.deepEqual(returnCardLinesOnFile(tradeStyleWrite.draft), returnCardLinesOnFile(paperBase));
   const reasonAsk = nextFoxAsk(tradeStyleWrite.draft);
   assert.equal(reasonAsk.text, noPersonLine);
+  assert.equal(isOpenPapersFollowLine(reasonAsk.text), false, "no named person stays the silence line");
   assert.deepEqual(
     (reasonAsk.actions ?? []).map((item) => item.label),
     ["Skip", "Upload this", "Looks right"],
@@ -1605,11 +1607,47 @@ async function main() {
   assert.equal(otherYes.facts?.k1_ordinary_income, undefined);
   assert.equal(otherYes.incomeType.value ?? "", "");
   assert.equal(otherYes.returnPaperOtherK1, false);
-  assert.notEqual(nextFoxAsk(otherYes).text, "Other K-1 — is that person on this loan?");
+  const otherFollow = nextFoxAsk(otherYes);
+  assert.equal(
+    otherFollow.text,
+    "W-2s for the $96,000 are still needed. L&H VENTURES LLC. 1065 is still needed.",
+  );
+  assert.equal(isOpenPapersFollowLine(otherFollow.text), true);
+  assert.doesNotMatch(otherFollow.text, /1120-S|Use this\?|Other K-1|on this loan/);
+  assert.deepEqual((otherFollow.actions ?? []).map((item) => item.label), ["Skip", "Upload this", "Looks right"]);
+  assert.ok(
+    !(otherFollow.actions ?? []).some(
+      (item) => item.label === "Create account" || item.label === "Log in" || item.label === "Not now",
+    ),
+  );
+  const otherThread = sealStoredFoxThread([
+    { id: "card", role: "fox", text: otherAsk.text },
+    { id: "tap", role: "client", text: "Use this" },
+    { id: "next", role: "fox", text: otherFollow.text },
+  ]);
+  const otherLast = [...otherThread].reverse().find((item) => item.role === "fox");
+  assert.equal(otherLast?.text, otherFollow.text, "the second Use this paints a next line");
+  assert.notEqual(otherLast?.text, otherAsk.text);
+  assert.ok(
+    otherThread.some(
+      (item) => item.role === "fox" && item !== otherLast && /Vouch Eim Soy/.test(item.text),
+    ),
+    "the used card stays above the next line",
+  );
+  assert.deepEqual(
+    deskStripActions(otherThread, otherYes).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+  );
   assert.deepEqual(
     previewFacts(otherYes).filter((fact) => fact.label === "K-1").map((fact) => fact.value),
     ["Sichiv Ho", "Vouch Eim Soy"],
   );
+  assert.deepEqual(
+    previewFacts(otherYes).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    ["W-2s for the $96,000.", "L&H VENTURES LLC. 1065."],
+  );
+  assert.ok(!previewFacts(otherYes).some((fact) => fact.label === "K-1" && /\$/.test(fact.value)));
+  assert.ok(!previewFacts(otherYes).some((fact) => fact.id === "qualifying" || fact.label === "Income"));
   const pageSpelling = [
     ...headingLayer,
     "2024 Deductions, Credits, etc. K-1 (100S)",
@@ -1663,6 +1701,60 @@ async function main() {
   assert.deepEqual((pageSecond.actions ?? []).map((item) => item.label), ["Use this", "Change"]);
   assert.equal(pageUsed.incomeType.value ?? "", "");
   assert.deepEqual(returnCardLinesOnFile(pageUsed), writtenLines);
+  const pageSecondUsed = applyCapture({ field: "accept-proposal" });
+  const pageFollow = nextFoxAsk(pageSecondUsed);
+  assert.equal(
+    pageFollow.text,
+    "W-2s for the $96,000 are still needed. L&H VENTURES LLC. 1065 is still needed.",
+  );
+  assert.doesNotMatch(pageFollow.text, /1120-S|SICHIV|VOUCH|Use this\?/);
+  assert.deepEqual((pageFollow.actions ?? []).map((item) => item.label), ["Skip", "Upload this", "Looks right"]);
+  const pageThread = sealStoredFoxThread([
+    { id: "card", role: "fox", text: pageSecond.text },
+    { id: "tap", role: "client", text: "Use this" },
+    { id: "next", role: "fox", text: pageFollow.text },
+  ]);
+  assert.equal([...pageThread].reverse().find((item) => item.role === "fox")?.text, pageFollow.text);
+  assert.deepEqual(
+    deskStripActions(pageThread, pageSecondUsed).map((item) => item.label),
+    ["Skip", "Upload this", "Looks right"],
+  );
+  assert.deepEqual(
+    previewFacts(pageSecondUsed).filter((fact) => fact.label === "K-1").map((fact) => fact.value),
+    ["SICHIV HO", "VOUCH EIM SOY"],
+  );
+  assert.deepEqual(
+    previewFacts(pageSecondUsed).filter((fact) => fact.label === "Still needed").map((fact) => fact.value),
+    ["W-2s for the $96,000.", "L&H VENTURES LLC. 1065."],
+  );
+  assert.equal(pageSecondUsed.incomeType.value ?? "", "");
+  assert.deepEqual(returnCardLinesOnFile(pageSecondUsed), writtenLines);
+  const onePerson = applyExtractedFields(paperBase, {
+    extractClass: "tax_return",
+    confidence: 0.94,
+    fields: {
+      tax_year: "2024",
+      return_kind: "1120s",
+      entity_name: "HO & SOY INC",
+    },
+    readerMap: readerMapFromPrintedLines([
+      ...headingLayer,
+      "Schedule K-1 (Form 1120-S)",
+      "HO & SOY INC",
+      "Shareholder's name, address, city, state, and ZIP code",
+      "Mary Ann Lee",
+      "1 Ordinary business income (loss) 18,420",
+    ]),
+  });
+  loadIntakeDraft(onePerson.draft);
+  const oneUsed = applyCapture({ field: "accept-proposal" });
+  const oneFollow = nextFoxAsk(oneUsed);
+  assert.equal(oneUsed.pendingProposal, null);
+  assert.equal(
+    oneFollow.text,
+    "W-2s for the $96,000 are still needed. L&H VENTURES LLC. 1065 is still needed.",
+  );
+  assert.doesNotMatch(oneFollow.text, /1120-S|Mary Ann Lee|Use this\?/);
   const californiaLayer = [
     ...headingLayer,
     "TAXABLE YEAR Shareholder\u2019s Share of Income, CALIFORNIA SCHEDULE",
