@@ -414,7 +414,7 @@ export type FoxIntakeDraft = {
   whoOnLoanNameAsked?: boolean;
   /** Second name seen on a page. Not a coborrower row. */
   pageOtherName?: string;
-  /** Open 1120-S paper cleared one named Box 1. The other K-1 asks once. Not income. */
+  /** Stored drafts may still ask once. A named person already on this drop gets a card. Not income. */
   returnPaperOtherK1?: boolean;
   /** This 1120-S drop had no named K-1 person. The last line says so. Not a write. */
   k1PaperNoPerson?: string;

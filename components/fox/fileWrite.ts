@@ -1281,8 +1281,6 @@ export type Open1120sPaper = {
   ordinary: string;
   otherPerson: string;
   otherOrdinary: string;
-  /** The other named person is already on this drop's California K-1. Not the yes/no ask. */
-  secondCard: boolean;
 };
 
 function box1PeopleFromMap(
@@ -1351,7 +1349,6 @@ export function open1120sPaper(
       ordinary: first?.ordinary ?? "",
       otherPerson: second?.person ?? "",
       otherOrdinary: second?.ordinary ?? "",
-      secondCard: Boolean(second?.california),
     };
   }
   const ordinary = String(fields.k1_ordinary_income ?? "").replace(/[^\d.]/g, "");
@@ -1364,7 +1361,6 @@ export function open1120sPaper(
     ordinary: person ? ordinary : "",
     otherPerson,
     otherOrdinary: otherPerson ? otherOrdinary : "",
-    secondCard: false,
   };
 }
 
@@ -1384,7 +1380,6 @@ export function k1Box1PersonProposal(held: Open1120sPaper): FactProposal {
       ...(held.otherOrdinary
         ? [{ field: "other_k1_ordinary_income", value: held.otherOrdinary, label: "other K-1 Box 1" }]
         : []),
-      ...(held.secondCard ? [{ field: "second_k1_card", value: "yes", label: "K-1" }] : []),
     ],
   };
 }

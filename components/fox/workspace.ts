@@ -11443,6 +11443,15 @@ export function previewFacts(draft: FoxIntakeDraft): PreviewFact[] {
         value: line,
       });
     });
+    for (const [id, field] of [
+      ["k1-person", "k1_partner_name"],
+      ["k1-person-other", "other_k1_partner_name"],
+    ] as const) {
+      const written = draft.facts?.[field];
+      const name = String(written?.value ?? "").replace(/\s+/g, " ").trim();
+      if (!written?.confirmed || !name) continue;
+      facts.push({ id, label: "K-1", value: name });
+    }
   } else {
     const taxReturnLine = taxReturnStructureValue(draft);
     if (taxReturnLine) {
